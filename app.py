@@ -784,7 +784,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
                                       .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
-elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+    elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🧮 AI Prediction Engine: {group_title}")
         
         # Bỏ đi các dòng thiếu dữ liệu để AI học

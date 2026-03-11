@@ -207,7 +207,7 @@ if st.sidebar.button("🔄 Refresh Data"):
 # ================================
 # LOAD GAUGE RANGE TABLE
 # ================================
-GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
+GAUGE_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMxBlogY84Z0cRCj2s/export?format=csv&gid=0"
 
 @st.cache_data
 def load_gauge():

@@ -413,7 +413,12 @@ if view_mode == "🚀 Global Summary Dashboard":
                 return pred, safe, "🔴 High Risk" if (sp_min > 0 and safe < sp_min) else "🟢 Safe"
 
             try:
-                b_dict = {col: g[col] for col in GROUP_COLS}
+                # --- FIX: CHỈ LẤY SPEC VÀ GAUGE, ẨN CÁC CỘT THỪA ---
+                b_dict = {}
+                for col in GROUP_COLS:
+                    if col not in ["Rolling_Type", "Metallic_Type", "Material", "Quality_Group"]:
+                        b_dict[col] = g[col]
+                # ---------------------------------------------------
                 
                 ts_m = sub_grp["Standard TS min"].max() if "Standard TS min" in sub_grp else 0
                 p_ts, s_ts, r_ts = g_risk("TS", ts_m)

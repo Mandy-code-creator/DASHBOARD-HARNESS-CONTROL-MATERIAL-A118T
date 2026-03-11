@@ -34,7 +34,8 @@ def add_custom_css():
 add_custom_css()
 
 # ================================
-# LOAD DATA
+# ================================
+# LOAD & CLEAN DATA
 # ================================
 DATA_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMxBlogY84Z0cRCj2s/export?format=csv"
 
@@ -42,71 +43,54 @@ DATA_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMx
 def load_main():
     r = requests.get(DATA_URL)
     r.encoding = "utf-8"
+    
+    # Chốt chặn cảnh báo nếu link Google Sheet chưa được mở quyền Public
+    if "<!doctype html>" in r.text[:50].lower() or "<html" in r.text[:50].lower():
+        st.error("🚨 LỖI BẢO MẬT: Link Google Sheet đang bị khóa. Vui lòng vào Google Sheet -> Share -> Chọn 'Anyone with the link' (Bất kỳ ai có liên kết).")
+        st.stop()
+        
     return pd.read_csv(StringIO(r.text))
 
 raw = load_main()
 
-# ================================
-# DATE HANDLING
-# ================================
-data_period_str = "N/A"
-date_col = next((c for c in raw.columns if 'DATE' in str(c).upper()), None)
-if date_col:
-    raw[date_col] = pd.to_datetime(raw[date_col], errors='coerce')
-    min_date = raw[date_col].min()
-    max_date = raw[date_col].max()
-    if pd.notna(min_date) and pd.notna(max_date):
-        data_period_str = f"{min_date.strftime('%d/%m/%Y')} - {max_date.strftime('%d/%m/%Y')}"
+# Tự động làm sạch dấu xuống dòng (Enter) bị ẩn trong file
+raw.columns = raw.columns.str.replace('\n', ' ', regex=False).str.replace('\r', ' ', regex=False).str.strip()
 
-current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
-st.markdown(f"""
-<div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
-    <strong>🕒 Report Generated:</strong> {current_time} &nbsp;&nbsp;|&nbsp;&nbsp; 
-    <strong>📅 Data Period:</strong> {data_period_str}
-</div>
-""", unsafe_allow_html=True)
-
-# ---------------------------------------------------------
-# BỘ QUÉT TIÊU ĐỀ CỘT TUYỆT ĐỐI (BULLETPROOF PARSER)
-# ---------------------------------------------------------
+# Tạo mapping thông minh: Quét từng cột, nếu chứa từ khóa thì tự động đổi tên chuẩn
 col_mapping = {}
 for col in raw.columns:
-    # Dùng Regex để dọn sạch 100% khoảng trắng (\s), tab, xuống dòng (\n) và gạch dưới (_)
-    clean_name = re.sub(r'[\s_]+', '', str(col)).upper()
-    
-    if 'PRODUCTSPEC' in clean_name: col_mapping[col] = 'Product_Spec'
-    elif 'HRSTEELGRADE' in clean_name or 'STEELGRADE' in clean_name: col_mapping[col] = 'Material'
-    elif 'CLASSIFY' in clean_name: col_mapping[col] = 'Rolling_Type'
-    elif 'QUALITYCODE' in clean_name: col_mapping[col] = 'Quality_Code'
-    elif 'ORDERGAUGE' in clean_name: col_mapping[col] = 'Order_Gauge'
-    elif 'TOPCOATMASS' in clean_name: col_mapping[col] = 'Top_Coatmass'
-    elif 'METALLICCOATING' in clean_name: col_mapping[col] = 'Metallic_Type'
-    elif 'COILNO' in clean_name: col_mapping[col] = 'COIL_NO'
-    elif 'STANDARDHARDNESS' in clean_name: col_mapping[col] = 'Std_Text'
-    elif 'HARDNESS冶金' in clean_name or '冶金' in clean_name: col_mapping[col] = 'Hardness_LAB'
-    elif '鍍鋅線C' in clean_name or ('HARDNESS' in clean_name and 'C' in clean_name and 'N' not in clean_name and 'S' not in clean_name): col_mapping[col] = 'Hardness_LINE'
-    elif 'TENSILEYIELD' in clean_name: col_mapping[col] = 'YS'
-    elif 'TENSILETENSILE' in clean_name: col_mapping[col] = 'TS'
-    elif 'TENSILEELONG' in clean_name: col_mapping[col] = 'EL'
-    elif 'STANDARDTSMIN' in clean_name: col_mapping[col] = 'Standard TS min'
-    elif 'STANDARDTSMAX' in clean_name: col_mapping[col] = 'Standard TS max'
-    elif 'STANDARDYSMIN' in clean_name: col_mapping[col] = 'Standard YS min'
-    elif 'STANDARDYSMAX' in clean_name: col_mapping[col] = 'Standard YS max'
-    elif 'STANDARDELMIN' in clean_name: col_mapping[col] = 'Standard EL min'
-    elif 'STANDARDELMAX' in clean_name: col_mapping[col] = 'Standard EL max'
+    c_upper = str(col).upper()
+    if "PRODUCT SPECIFICATION" in c_upper: col_mapping[col] = "Product_Spec"
+    elif "HR STEEL GRADE" in c_upper: col_mapping[col] = "Material"
+    elif "CLASSIFY" in c_upper: col_mapping[col] = "Rolling_Type"
+    elif "QUALITY CODE" in c_upper: col_mapping[col] = "Quality_Code"
+    elif "ORDER GAUGE" in c_upper: col_mapping[col] = "Order_Gauge"
+    elif "TOP COATMASS" in c_upper: col_mapping[col] = "Top_Coatmass"
+    elif "METALLIC COATING" in c_upper: col_mapping[col] = "Metallic_Type"
+    elif "COIL_NO" in c_upper or "COIL NO" in c_upper: col_mapping[col] = "COIL_NO"
+    elif "STANDARD HARDNESS" in c_upper: col_mapping[col] = "Std_Text"
+    elif "HARDNESS 冶金" in c_upper or "冶金" in c_upper: col_mapping[col] = "Hardness_LAB"
+    elif "鍍鋅線 C" in c_upper or "鍍鋅線C" in c_upper: col_mapping[col] = "Hardness_LINE" # Bắt chính xác cột C
+    elif "TENSILE YIELD" in c_upper: col_mapping[col] = "YS"
+    elif "TENSILE TENSILE" in c_upper: col_mapping[col] = "TS"
+    elif "TENSILE ELONG" in c_upper: col_mapping[col] = "EL"
+    elif "STANDARD YS MIN" in c_upper: col_mapping[col] = "Standard YS min"
+    elif "STANDARD YS MAX" in c_upper: col_mapping[col] = "Standard YS max"
+    elif "STANDARD TS MIN" in c_upper: col_mapping[col] = "Standard TS min"
+    elif "STANDARD TS MAX" in c_upper: col_mapping[col] = "Standard TS max"
+    elif "STANDARD EL MIN" in c_upper: col_mapping[col] = "Standard EL min"
+    elif "STANDARD EL MAX" in c_upper: col_mapping[col] = "Standard EL max"
 
 df = raw.rename(columns=col_mapping)
 
-# Cảnh báo gắt nếu bảng thiếu mất cột xương sống
-if "Hardness_LINE" not in df.columns:
-    st.error(f"⚠️ Dữ liệu vẫn bị lỗi ở cột Độ cứng. Các cột đang có trong file: {list(raw.columns)}")
-    st.stop()
+# Chốt chặn dự phòng nếu file thiếu cột COIL_NO
+if "COIL_NO" not in df.columns:
+    df["COIL_NO"] = df.index 
 
-# Điền cột ảo nếu thiếu các cột không quá quan trọng
-if "COIL_NO" not in df.columns: df["COIL_NO"] = df.index 
-if "Material" not in df.columns: df["Material"] = "A118T"
-if "Product_Spec" not in df.columns: df["Product_Spec"] = "N/A"
-
+# ================================
+# LỌC ĐỘC QUYỀN A118T & XỬ LÝ SỐ LIỆU
+# ================================
+# (Giữ nguyên phần code tiếp theo ở dưới...)
 # ================================
 # LỌC A118T & XỬ LÝ SỐ LIỆU
 # ================================

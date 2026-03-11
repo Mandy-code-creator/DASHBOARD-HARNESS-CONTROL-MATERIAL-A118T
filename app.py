@@ -92,32 +92,7 @@ if "COIL_NO" not in df.columns:
 # ================================
 # (Giữ nguyên phần code tiếp theo ở dưới...)
 # ================================
-# LỌC A118T & XỬ LÝ SỐ LIỆU
-# ================================
-df = df[(df["Material"].astype(str).str.upper().str.contains("A118T")) | 
-        (df["Product_Spec"].astype(str).str.upper().str.contains("A118T"))].copy()
-
-if df.empty:
-    st.error("⚠️ Không tìm thấy dữ liệu nào cho mã thép A118T trong tệp nguồn.")
-    st.stop()
-
-# Tách giới hạn độ cứng
-def split_std(x):
-    if isinstance(x, str) and "~" in x:
-        try:
-            lo, hi = x.split("~")
-            return float(lo.strip()), float(hi.strip())
-        except: pass
-    return np.nan, np.nan
-
-if "Std_Text" in df.columns:
-    df[["Limit_Min","Limit_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
-else:
-    df[["Limit_Min","Limit_Max"]] = 80.0, 93.0 
-
-df["Lab_Min"] = df["Limit_Min"]
-df["Lab_Max"] = df["Limit_Max"]
-
+# Ép kiểu dữ liệu số
 numeric_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge", 
                 "Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", 
                 "Standard EL min", "Standard EL max", "Limit_Min", "Limit_Max"]
@@ -125,6 +100,14 @@ for c in numeric_cols:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
+# ---> FIX: LOẠI BỎ GIÁ TRỊ 0 VÀ NA <---
+# Chuyển đổi toàn bộ số 0 trong các cột kết quả test thành NaN
+test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL"]
+for c in test_cols:
+    if c in df.columns:
+        df[c] = df[c].replace(0, np.nan)
+
+# Lúc này .dropna() sẽ tự động dọn sạch cả ô trống và ô chứa số 0
 df = df.dropna(subset=["Hardness_LINE"])
 
 # ================================

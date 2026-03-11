@@ -1,5 +1,5 @@
 # ================================
-# FULL STREAMLIT APP – A118T FINAL (BULLETPROOF COLUMN PARSER)
+# FULL STREAMLIT APP – A118T FINAL (RESTORED OLD FILTERS + DROP ZERO)
 # ================================
 
 import streamlit as st
@@ -34,7 +34,6 @@ def add_custom_css():
 add_custom_css()
 
 # ================================
-# ================================
 # LOAD & CLEAN DATA
 # ================================
 DATA_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMxBlogY84Z0cRCj2s/export?format=csv"
@@ -43,76 +42,118 @@ DATA_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMx
 def load_main():
     r = requests.get(DATA_URL)
     r.encoding = "utf-8"
-    
-    # Chốt chặn cảnh báo nếu link Google Sheet chưa được mở quyền Public
     if "<!doctype html>" in r.text[:50].lower() or "<html" in r.text[:50].lower():
         st.error("🚨 LỖI BẢO MẬT: Link Google Sheet đang bị khóa. Vui lòng vào Google Sheet -> Share -> Chọn 'Anyone with the link' (Bất kỳ ai có liên kết).")
         st.stop()
-        
     return pd.read_csv(StringIO(r.text))
 
 raw = load_main()
 
-# Tự động làm sạch dấu xuống dòng (Enter) bị ẩn trong file
-raw.columns = raw.columns.str.replace('\n', ' ', regex=False).str.replace('\r', ' ', regex=False).str.strip()
+# Xử lý ngày tháng
+data_period_str = "N/A"
+date_col = next((c for c in raw.columns if 'DATE' in str(c).upper()), None)
+if date_col:
+    raw[date_col] = pd.to_datetime(raw[date_col], errors='coerce')
+    min_date = raw[date_col].min()
+    max_date = raw[date_col].max()
+    if pd.notna(min_date) and pd.notna(max_date):
+        data_period_str = f"{min_date.strftime('%d/%m/%Y')} - {max_date.strftime('%d/%m/%Y')}"
 
-# Tạo mapping thông minh: Quét từng cột, nếu chứa từ khóa thì tự động đổi tên chuẩn
+current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
+st.markdown(f"""
+<div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
+    <strong>🕒 Report Generated:</strong> {current_time} &nbsp;&nbsp;|&nbsp;&nbsp; 
+    <strong>📅 Data Period:</strong> {data_period_str}
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# BỘ QUÉT TIÊU ĐỀ CỘT TUYỆT ĐỐI
+# ---------------------------------------------------------
 col_mapping = {}
 for col in raw.columns:
-    c_upper = str(col).upper()
-    if "PRODUCT SPECIFICATION" in c_upper: col_mapping[col] = "Product_Spec"
-    elif "HR STEEL GRADE" in c_upper: col_mapping[col] = "Material"
-    elif "CLASSIFY" in c_upper: col_mapping[col] = "Rolling_Type"
-    elif "QUALITY CODE" in c_upper: col_mapping[col] = "Quality_Code"
-    elif "ORDER GAUGE" in c_upper: col_mapping[col] = "Order_Gauge"
-    elif "TOP COATMASS" in c_upper: col_mapping[col] = "Top_Coatmass"
-    elif "METALLIC COATING" in c_upper: col_mapping[col] = "Metallic_Type"
-    elif "COIL_NO" in c_upper or "COIL NO" in c_upper: col_mapping[col] = "COIL_NO"
-    elif "STANDARD HARDNESS" in c_upper: col_mapping[col] = "Std_Text"
-    elif "HARDNESS 冶金" in c_upper or "冶金" in c_upper: col_mapping[col] = "Hardness_LAB"
-    elif "鍍鋅線 C" in c_upper or "鍍鋅線C" in c_upper: col_mapping[col] = "Hardness_LINE" # Bắt chính xác cột C
-    elif "TENSILE YIELD" in c_upper: col_mapping[col] = "YS"
-    elif "TENSILE TENSILE" in c_upper: col_mapping[col] = "TS"
-    elif "TENSILE ELONG" in c_upper: col_mapping[col] = "EL"
-    elif "STANDARD YS MIN" in c_upper: col_mapping[col] = "Standard YS min"
-    elif "STANDARD YS MAX" in c_upper: col_mapping[col] = "Standard YS max"
-    elif "STANDARD TS MIN" in c_upper: col_mapping[col] = "Standard TS min"
-    elif "STANDARD TS MAX" in c_upper: col_mapping[col] = "Standard TS max"
-    elif "STANDARD EL MIN" in c_upper: col_mapping[col] = "Standard EL min"
-    elif "STANDARD EL MAX" in c_upper: col_mapping[col] = "Standard EL max"
+    clean_name = re.sub(r'[\s_]+', '', str(col)).upper()
+    if 'PRODUCTSPEC' in clean_name: col_mapping[col] = 'Product_Spec'
+    elif 'HRSTEELGRADE' in clean_name or 'STEELGRADE' in clean_name: col_mapping[col] = 'Material'
+    elif 'CLASSIFY' in clean_name: col_mapping[col] = 'Rolling_Type'
+    elif 'QUALITYCODE' in clean_name: col_mapping[col] = 'Quality_Code'
+    elif 'ORDERGAUGE' in clean_name: col_mapping[col] = 'Order_Gauge'
+    elif 'METALLICCOATING' in clean_name: col_mapping[col] = 'Metallic_Type'
+    elif 'COILNO' in clean_name: col_mapping[col] = 'COIL_NO'
+    elif 'STANDARDHARDNESS' in clean_name: col_mapping[col] = 'Std_Text'
+    elif 'HARDNESS冶金' in clean_name or '冶金' in clean_name: col_mapping[col] = 'Hardness_LAB'
+    elif '鍍鋅線C' in clean_name or ('HARDNESS' in clean_name and 'C' in clean_name and 'N' not in clean_name and 'S' not in clean_name): col_mapping[col] = 'Hardness_LINE'
+    elif 'TENSILEYIELD' in clean_name: col_mapping[col] = 'YS'
+    elif 'TENSILETENSILE' in clean_name: col_mapping[col] = 'TS'
+    elif 'TENSILEELONG' in clean_name: col_mapping[col] = 'EL'
+    elif 'STANDARDTSMIN' in clean_name: col_mapping[col] = 'Standard TS min'
+    elif 'STANDARDTSMAX' in clean_name: col_mapping[col] = 'Standard TS max'
+    elif 'STANDARDYSMIN' in clean_name: col_mapping[col] = 'Standard YS min'
+    elif 'STANDARDYSMAX' in clean_name: col_mapping[col] = 'Standard YS max'
+    elif 'STANDARDELMIN' in clean_name: col_mapping[col] = 'Standard EL min'
+    elif 'STANDARDELMAX' in clean_name: col_mapping[col] = 'Standard EL max'
 
 df = raw.rename(columns=col_mapping)
 
-# Chốt chặn dự phòng nếu file thiếu cột COIL_NO
-if "COIL_NO" not in df.columns:
-    df["COIL_NO"] = df.index 
+if "Hardness_LINE" not in df.columns:
+    st.error(f"⚠️ Dữ liệu bị lỗi cột Độ cứng. Các cột hiện có: {list(raw.columns)}")
+    st.stop()
+
+if "COIL_NO" not in df.columns: df["COIL_NO"] = df.index 
+if "Material" not in df.columns: df["Material"] = "A118T"
+if "Product_Spec" not in df.columns: df["Product_Spec"] = "N/A"
 
 # ================================
-# LỌC ĐỘC QUYỀN A118T & XỬ LÝ SỐ LIỆU
+# LỌC ĐỘC QUYỀN A118T & CÁC SPECS YÊU CẦU
 # ================================
-# (Giữ nguyên phần code tiếp theo ở dưới...)
-# ================================
-# Ép kiểu dữ liệu số
-numeric_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge", 
-                "Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", 
-                "Standard EL min", "Standard EL max", "Limit_Min", "Limit_Max"]
-for c in numeric_cols:
-    if c in df.columns:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+allowed_keywords = "A118T|2657/G01T|N SZACC|NSZACC"
+df = df[
+    (df["Material"].astype(str).str.upper().str.contains(allowed_keywords, regex=True)) | 
+    (df.get("Product_Spec", pd.Series(dtype=str)).astype(str).str.upper().str.contains(allowed_keywords, regex=True))
+].copy()
 
-# ---> FIX: LOẠI BỎ GIÁ TRỊ 0 VÀ NA <---
-# Chuyển đổi toàn bộ số 0 trong các cột kết quả test thành NaN
-test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL"]
+if df.empty:
+    st.error("⚠️ Không tìm thấy dữ liệu cho mã A118T, 2657/G01T hoặc N SZACC.")
+    st.stop()
+
+# ================================
+# XỬ LÝ SỐ LIỆU & LOẠI BỎ GIÁ TRỊ 0/NA (GIẢI QUYẾT OUTLIER BIỂU ĐỒ)
+# ================================
+# Khởi tạo an toàn các cột Limit
+df["Limit_Min"] = 80.0
+df["Limit_Max"] = 93.0
+
+def split_std(x):
+    if isinstance(x, str) and "~" in x:
+        try:
+            lo, hi = x.split("~")
+            return float(lo.strip()), float(hi.strip())
+        except: pass
+    return 80.0, 93.0
+
+if "Std_Text" in df.columns:
+    limits = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
+    if not limits.empty and limits.shape[1] == 2:
+        df[["Limit_Min", "Limit_Max"]] = limits
+
+df["Lab_Min"] = df["Limit_Min"]
+df["Lab_Max"] = df["Limit_Max"]
+df["Rule_Name"] = "Direct Spec"
+
+# Chuyển 0 thành NA và ép kiểu số
+test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge", 
+             "Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", 
+             "Standard EL min", "Standard EL max"]
+
 for c in test_cols:
     if c in df.columns:
-        df[c] = df[c].replace(0, np.nan)
+        df[c] = pd.to_numeric(df[c], errors="coerce").replace(0, np.nan)
 
-# Lúc này .dropna() sẽ tự động dọn sạch cả ô trống và ô chứa số 0
+# Loại bỏ các dòng không có độ cứng Line
 df = df.dropna(subset=["Hardness_LINE"])
 
 # ================================
-# ================================
-# SIDEBAR FILTER (DYNAMIC)
+# SIDEBAR FILTER (ĐIỀU KIỆN LỌC NHƯ APP TRƯỚC - BỎ TOP COAT)
 # ================================
 st.sidebar.header("🎛 FILTER (A118T & Specs)")
 
@@ -120,24 +161,22 @@ if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
 
-# Thêm Product_Spec vào bộ lọc
 all_specs = sorted(df["Product_Spec"].dropna().astype(str).unique()) if "Product_Spec" in df else []
 all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolling_Type" in df else []
-all_coatmass = sorted(df["Top_Coatmass"].dropna().astype(str).unique()) if "Top_Coatmass" in df else []
-all_gauge = sorted(df["Order_Gauge"].dropna().astype(float).unique()) if "Order_Gauge" in df else []
+all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
+all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
 
 specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
 rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
-coatmass = st.sidebar.selectbox("3. Top Coatmass", ["All"] + list(all_coatmass)) if all_coatmass else "All"
-gauge = st.sidebar.selectbox("4. Order Gauge (Thickness)", ["All"] + list(all_gauge)) if all_gauge else "All"
+metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal)) if all_metal else "All"
+qgroup = st.sidebar.selectbox("4. Quality Group", ["All"] + list(all_qgroup)) if all_qgroup else "All"
 
 df_master_full = df.copy() 
 
-# Áp dụng các bộ lọc
 if specs_filter != "All" and "Product_Spec" in df: df = df[df["Product_Spec"].astype(str) == specs_filter]
 if rolling != "All" and "Rolling_Type" in df: df = df[df["Rolling_Type"].astype(str) == rolling]
-if coatmass != "All" and "Top_Coatmass" in df: df = df[df["Top_Coatmass"].astype(str) == str(coatmass)]
-if gauge != "All" and "Order_Gauge" in df: df = df[df["Order_Gauge"].astype(float) == float(gauge)]
+if metal != "All" and "Metallic_Type" in df: df = df[df["Metallic_Type"].astype(str) == metal]
+if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",
@@ -156,8 +195,8 @@ view_mode = st.sidebar.radio(
     ]
 )
 
-# Thêm Product_Spec vào cấu trúc gộp nhóm (Group)
-GROUP_COLS = [c for c in ["Product_Spec", "Rolling_Type", "Top_Coatmass", "Order_Gauge", "Material"] if c in df.columns]
+# Gộp nhóm chuẩn như app trước
+GROUP_COLS = [c for c in ["Product_Spec", "Rolling_Type", "Metallic_Type", "Quality_Group", "Material", "Order_Gauge"] if c in df.columns]
 if not GROUP_COLS: GROUP_COLS = ["Material"]
 
 cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
@@ -166,6 +205,7 @@ valid = cnt[cnt["N_Coils"] >= 1]
 if valid.empty:
     st.warning("⚠️ No valid coils found for the current filter. Please adjust the sidebar.")
     st.stop()
+
 # ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================
@@ -286,16 +326,94 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             try:
                 base_dict = {col: g[col] for col in GROUP_COLS}
+                
                 ts_min = sub_grp["Standard TS min"].max() if "Standard TS min" in sub_grp else 0
                 pred_ts, safe_ts, risk_ts = get_pred_risk("TS", ts_min)
                 r_ts = base_dict.copy(); r_ts.update({"Pred TS": f"{pred_ts:.0f}", "Worst Case": f"{safe_ts:.0f}", "Limit": f"≥ {ts_min:.0f}" if ts_min > 0 else "-", "Status": risk_ts}); rows_ts.append(r_ts)
+                
+                ys_min = sub_grp["Standard YS min"].max() if "Standard YS min" in sub_grp else 0
+                pred_ys, safe_ys, risk_ys = get_pred_risk("YS", ys_min)
+                r_ys = base_dict.copy(); r_ys.update({"Pred YS": f"{pred_ys:.0f}", "Worst Case": f"{safe_ys:.0f}", "Limit": f"≥ {ys_min:.0f}" if ys_min > 0 else "-", "Status": risk_ys}); rows_ys.append(r_ys)
+
+                el_min = sub_grp["Standard EL min"].max() if "Standard EL min" in sub_grp else 0
+                pred_el, safe_el, risk_el = get_pred_risk("EL", el_min)
+                r_el = base_dict.copy(); r_el.update({"Pred EL": f"{pred_el:.1f}", "Worst Case": f"{safe_el:.1f}", "Limit": f"≥ {el_min:.1f}" if el_min > 0 else "-", "Status": risk_el}); rows_el.append(r_el)
             except: pass
 
         if rows_ts:
             def style_risk(val): return 'color: red; font-weight: bold' if "🔴" in val else 'color: green; font-weight: bold'
-            st.markdown("##### 🔹 Tensile Strength (TS)")
-            st.dataframe(pd.DataFrame(rows_ts).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+            c_top1, c_top2 = st.columns(2)
+            with c_top1:
+                st.markdown("##### 🔹 Tensile Strength (TS)")
+                st.dataframe(pd.DataFrame(rows_ts).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+            with c_top2:
+                st.markdown("##### 🔸 Yield Strength (YS)")
+                st.dataframe(pd.DataFrame(rows_ys).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+            st.markdown("---")
+            st.markdown("##### 🔻 Elongation (EL)")
+            st.dataframe(pd.DataFrame(rows_el).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
         else: st.warning("Insufficient data.")
+    st.stop()
+
+# ==============================================================================
+# MASTER DICTIONARY EXPORT (FULL VIEW)
+# ==============================================================================
+if view_mode == "👑 Master Dictionary Export":
+    st.markdown("---")
+    st.header("👑 Master Mechanical Properties Dictionary (A118T)")
+    
+    col_sig1, col_sig2 = st.columns(2)
+    with col_sig1: target_k = st.number_input("🎯 Target Zone Multiplier (Default: 1.0 σ)", value=1.0, step=0.1, key="k_target")
+    with col_sig2: control_k = st.number_input("🚧 Control Limit Multiplier (Default: 3.0 σ)", value=3.0, step=0.5, key="k_control")
+    
+    if st.button("🚀 Generate & Download Master Dictionary", type="primary"):
+        master_data = []
+        clean_master_df = df_master_full.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
+        
+        for keys, group in clean_master_df.groupby(GROUP_COLS):
+            valid_coils_count = len(group)
+            if valid_coils_count < 3: continue 
+            
+            mean_hrb = group['Hardness_LINE'].mean()
+            std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
+            mrs = np.abs(np.diff(group['Hardness_LINE'].values)) 
+            sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else std_hrb 
+            
+            t_min, t_max = mean_hrb - (target_k * std_hrb), mean_hrb + (target_k * std_hrb)
+            c_min, c_max = mean_hrb - (control_k * std_hrb), mean_hrb + (control_k * std_hrb)
+            imr_min, imr_max = mean_hrb - (control_k * sigma_imr), mean_hrb + (control_k * sigma_imr)
+            
+            ts_mu, ts_sig = group['TS'].mean(), group['TS'].std() if valid_coils_count > 1 else 0
+            ys_mu, ys_sig = group['YS'].mean(), group['YS'].std() if valid_coils_count > 1 else 0
+            el_mu, el_sig = group['EL'].mean(), group['EL'].std() if valid_coils_count > 1 else 0
+            
+            target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
+            if len(target_group) > 0:
+                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
+                curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
+                
+                exp_ts_min, exp_ts_max = target_group['TS'].mean() - (control_k * target_group['TS'].std()), target_group['TS'].mean() + (control_k * target_group['TS'].std())
+                exp_ys_min, exp_ys_max = target_group['YS'].mean() - (control_k * target_group['YS'].std()), target_group['YS'].mean() + (control_k * target_group['YS'].std())
+                exp_el_min, exp_el_max = max(0, target_group['EL'].mean() - (control_k * target_group['EL'].std())), target_group['EL'].mean() + (control_k * target_group['EL'].std())
+
+                master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(GROUP_COLS)}
+                master_dict.update({
+                    "Current HRB Limit": curr_limit_str, "Valid Coils (N)": valid_coils_count,
+                    "Std Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}", "I-MR Limit (HRB)": f"{imr_min:.1f} ~ {imr_max:.1f}",
+                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
+                    "TS Control": f"{ts_mu - control_k*ts_sig:.0f} ~ {ts_mu + control_k*ts_sig:.0f}", "Expected TS": f"{exp_ts_min:.0f} ~ {exp_ts_max:.0f}",
+                    "YS Control": f"{ys_mu - control_k*ys_sig:.0f} ~ {ys_mu + control_k*ys_sig:.0f}", "Expected YS": f"{exp_ys_min:.0f} ~ {exp_ys_max:.0f}",
+                    "EL Control": f"{max(0, el_mu - control_k*el_sig):.1f} ~ {el_mu + control_k*el_sig:.1f}", "Expected EL": f"{exp_el_min:.1f} ~ {exp_el_max:.1f}"
+                })
+                master_data.append(master_dict)
+        
+        if len(master_data) > 0:
+            output_buffer = BytesIO()
+            pd.DataFrame(master_data).to_excel(output_buffer, index=False)
+            st.success(f"✅ Dictionary successfully generated for **{len(master_data)} product groups**.")
+            st.download_button("📥 Download Master Report (Excel)", data=output_buffer.getvalue(), file_name=f"Master_Dictionary_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.ms-excel")
+        else: st.warning("Not enough data to generate dictionary.")
     st.stop()
 
 # ==============================================================================

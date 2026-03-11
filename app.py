@@ -1009,21 +1009,57 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax2.legend(loc="upper right", fontsize="small")
             st.pyplot(fig2)
             # ==================================================================
-            # 3. SUMMARY TABLE & EXCEL EXPORT (DỰ PHÓNG CƠ TÍNH)
+            # ==================================================================
+            # 3. SUMMARY TABLE & EXCEL EXPORT (DỰ PHÓNG CƠ TÍNH KÈM ĐÁNH GIÁ SPEC)
             # ==================================================================
             st.write("---") 
             st.markdown(f"#### 📌 Limit Summary & Mechanical Estimation")
             
-            # Hàm nội suy cơ tính từ độ cứng A118T
+            # Lấy giới hạn Spec Cơ tính từ Data
+            spec_ts_min = sub["Standard TS min"].max() if "Standard TS min" in sub.columns else 0
+            spec_ts_max = sub["Standard TS max"].min() if "Standard TS max" in sub.columns else 0
+            spec_ys_min = sub["Standard YS min"].max() if "Standard YS min" in sub.columns else 0
+            spec_ys_max = sub["Standard YS max"].min() if "Standard YS max" in sub.columns else 0
+            spec_el_min = sub["Standard EL min"].max() if "Standard EL min" in sub.columns else 0
+            
+            def fmt_spec(s_min, s_max):
+                if pd.isna(s_min): s_min = 0
+                if pd.isna(s_max): s_max = 0
+                if s_min > 0 and 0 < s_max < 9000: return f"{s_min:.0f}~{s_max:.0f}"
+                elif s_min > 0: return f"≥ {s_min:.0f}"
+                elif 0 < s_max < 9000: return f"≤ {s_max:.0f}"
+                return "-"
+
+            # Hiển thị thanh Spec làm chuẩn
+            st.info(f"**Mục tiêu Cơ tính (Specs):** TS: **{fmt_spec(spec_ts_min, spec_ts_max)}** | YS: **{fmt_spec(spec_ys_min, spec_ys_max)}** | EL: **{fmt_spec(spec_el_min, 0)}**")
+
+            # Huấn luyện mô hình Linear Regression từ dữ liệu thực tế để dự phóng
+            df_train = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+            has_model = False
+            if len(df_train) >= 3:
+                has_model = True
+                X_train = df_train[["Hardness_LINE"]].values
+                m_ts = LinearRegression().fit(X_train, df_train["TS"].values)
+                m_ys = LinearRegression().fit(X_train, df_train["YS"].values)
+                m_el = LinearRegression().fit(X_train, df_train["EL"].values)
+
             def get_mech(h_val):
-                try:
-                    h = float(h_val)
-                    if h <= 0 or pd.isna(h): return 0, 0, 0
-                    ts = 5.5 * h + 75
-                    ys = ts * 0.75
-                    el = 100 - (1.1 * h)
-                    return ts, ys, el
-                except: return 0, 0, 0
+                if not has_model or pd.isna(h_val) or h_val <= 0: return 0, 0, 0
+                ts = m_ts.predict([[h_val]])[0]
+                ys = m_ys.predict([[h_val]])[0]
+                el = m_el.predict([[h_val]])[0]
+                return ts, ys, el
+                
+            def eval_spec(v_min, v_max, s_min, s_max, is_el=False):
+                if v_min == 0 and v_max == 0: return "N/A"
+                if is_el: # EL chỉ có chặn dưới (min). v_min là điểm EL thấp nhất tương ứng với Hardness cao nhất
+                    if pd.notna(s_min) and s_min > 0 and v_min < s_min: return "❌ Fail"
+                    return "✅ Pass"
+                
+                # TS và YS
+                if pd.notna(s_min) and s_min > 0 and v_min < s_min: return "❌ Fail"
+                if pd.notna(s_max) and 0 < s_max < 9000 and v_max > s_max: return "❌ Fail"
+                return "✅ Pass"
 
             target_k = 1.0 
             new_target_min = mu - target_k * sigma_imr
@@ -1039,47 +1075,53 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ]
 
             for cat, l_min, l_max, sig in configs:
-                ts_lmin, ys_lmin, el_lmax = get_mech(l_min)
-                ts_lmax, ys_lmax, el_lmin = get_mech(l_max)
+                ts_1, ys_1, el_1 = get_mech(l_min)
+                ts_2, ys_2, el_2 = get_mech(l_max)
                 
-                valid_data = data[(data >= l_min) & (data <= l_max)] if l_max > 0 else []
+                ts_lmin, ts_lmax = min(ts_1, ts_2), max(ts_1, ts_2)
+                ys_lmin, ys_lmax = min(ys_1, ys_2), max(ys_1, ys_2)
+                el_lmin, el_lmax = min(el_1, el_2), max(el_1, el_2)
                 
-                if len(valid_data) > 0:
-                    act_min, act_max = valid_data.min(), valid_data.max()
-                    ts_amin, ys_amin, el_amax = get_mech(act_min)
-                    ts_amax, ys_amax, el_amin = get_mech(act_max)
-                    
-                    act_ts = f"{ts_amin:.0f} ~ {ts_amax:.0f}"
-                    act_ys = f"{ys_amin:.0f} ~ {ys_amax:.0f}"
-                    act_el = f"{el_amax:.1f} ~ {el_amin:.1f}"
-                else:
-                    act_ts = act_ys = act_el = "N/A"
+                ts_eval = eval_spec(ts_lmin, ts_lmax, spec_ts_min, spec_ts_max)
+                ys_eval = eval_spec(ys_lmin, ys_lmax, spec_ys_min, spec_ys_max)
+                el_eval = eval_spec(el_lmin, el_lmax, spec_el_min, 0, is_el=True)
+                
+                overall = "✅ Optimal" if (ts_eval == "✅ Pass" and ys_eval == "✅ Pass" and el_eval == "✅ Pass") else "⚠️ Warning"
+                if not has_model: overall = "N/A"
 
                 rows.append({
                     "Limit Type": cat,
                     "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}",
                     "Variation": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
-                    "Theoretical TS": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}",
-                    "Actual TS": act_ts,
-                    "Theoretical YS": f"{ys_lmin:.0f} ~ {ys_lmax:.0f}",
-                    "Actual YS": act_ys,
-                    "Theoretical EL (%)": f"{el_lmax:.1f} ~ {el_lmin:.1f}",
-                    "Actual EL (%)": act_el
+                    "Est. TS": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}" if has_model else "-",
+                    "TS Eval": ts_eval,
+                    "Est. YS": f"{ys_lmin:.0f} ~ {ys_lmax:.0f}" if has_model else "-",
+                    "YS Eval": ys_eval,
+                    "Est. EL (%)": f"{el_lmin:.1f} ~ {el_lmax:.1f}" if has_model else "-",
+                    "EL Eval": el_eval,
+                    "Overall Proposal": overall
                 })
 
             df_summary = pd.DataFrame(rows)
             
+            def highlight_status(val):
+                if isinstance(val, str):
+                    if "✅" in val: return 'color: #155724; font-weight: bold'
+                    if "❌" in val: return 'color: #721c24; font-weight: bold; background-color: #f8d7da'
+                    if "⚠️" in val: return 'color: #856404; font-weight: bold'
+                return ''
+
             def highlight_new_target(s):
-                if "🌟 New Core Target" in s['Limit Type']:
-                    return ['background-color: #d4edda; font-weight: bold; color: #155724'] * len(s)
+                if "🌟 New Core Target" in str(s['Limit Type']): return ['background-color: #e2efda'] * len(s)
                 return [''] * len(s)
 
-            st.dataframe(
-                df_summary.style.apply(highlight_new_target, axis=1), 
-                use_container_width=True, 
-                hide_index=True
-            )
-            st.caption("*(**) TS: Tensile Strength (MPa) | YS: Yield Strength (MPa) | EL: Elongation (%)*")
+            styled_df = df_summary.style.apply(highlight_new_target, axis=1) \
+                                        .applymap(highlight_status, subset=['TS Eval', 'YS Eval', 'EL Eval', 'Overall Proposal'])
+
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            
+            if not has_model: st.caption("*(⚠️ Không đủ dữ liệu thực tế (N<3) để AI có thể nội suy cơ tính.)*")
+            else: st.caption("*(**) Các giá trị Est. (Dự phóng) được AI Linear Regression nội suy từ dữ liệu thực tế của chính nhóm này. Trạng thái ✅ Pass nghĩa là mức biên độ dao động độ cứng đó không vi phạm Tiêu chuẩn (Spec) cơ tính.*")
 
             # EXCEL EXPORT BUTTON
             import io
@@ -1093,26 +1135,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             safe_group_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', group_title)
             st.download_button(
-                label="📥 Download Summary as Excel",
+                label="📥 Download Estimation Summary (Excel)",
                 data=buffer.getvalue(),
                 file_name=f"Mech_Estimation_{safe_group_name}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key=f"dl_sum_{i}"
             )
-
+            
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown("## 📊 Summary of Control Limits")
             df_total = pd.DataFrame(all_groups_summary)
-            
-            def style_status(val):
-                return 'color: red; font-weight: bold' if 'Narrow' in val else 'color: green; font-weight: bold'
-
-            styled_df = (
-                df_total.style
-                .applymap(style_status, subset=['Status'])
-                .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
-            )
+            styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
+                                      .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             st.download_button("📥 Export Complete SPC Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_A118T.csv")

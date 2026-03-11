@@ -42,6 +42,7 @@ def fig_to_png(fig):
     return buf
 
 # ================================
+# ================================
 # LOAD & CLEAN DATA
 # ================================
 DATA_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMxBlogY84Z0cRCj2s/export?format=csv"
@@ -54,8 +55,11 @@ def load_main():
 
 raw = load_main()
 
-# Tự động làm sạch tiêu đề cột
-raw.columns = raw.columns.str.replace('\n', ' ', regex=False).str.replace('_', ' ', regex=False).str.strip().str.upper()
+# ---------------------------------------------------------
+# TỰ ĐỘNG LÀM SẠCH TÊN CỘT (Super Clean)
+# ---------------------------------------------------------
+# Dùng Regex (r'\s+') để gom TẤT CẢ khoảng trắng, dấu xuống dòng, tab... thành 1 dấu cách duy nhất
+raw.columns = raw.columns.str.replace(r'\s+', ' ', regex=True).str.replace('_', ' ', regex=False).str.strip().str.upper()
 
 # Đổi tên cột chuẩn hóa
 df = raw.rename(columns={
@@ -81,14 +85,39 @@ df = raw.rename(columns={
     "STANDARD EL MAX": "Standard EL max"
 })
 
-# Chốt chặn an toàn cho COIL_NO và Material
+# --- BỘ QUÉT & CHỐT CHẶN AN TOÀN ---
+
+# 1. Chốt chặn cho COIL_NO
 if "COIL_NO" not in df.columns:
     possible_cols = [c for c in df.columns if 'COIL' in str(c)]
     df["COIL_NO"] = df[possible_cols[0]] if possible_cols else df.index 
 
+# 2. Chốt chặn cho Material
 if "Material" not in df.columns:
     possible_mats = [c for c in df.columns if any(k in str(c) for k in ['GRADE', 'MATERIAL', 'STEEL', 'MAC'])]
     df["Material"] = df[possible_mats[0]] if possible_mats else "A118T"
+
+# 3. Chốt chặn cho Hardness_LINE (Trị dứt điểm KeyError)
+if "Hardness_LINE" not in df.columns:
+    # Tìm cột chứa chữ '鍍鋅線 C' hoặc có cả 'HARDNESS' và 'C'
+    possible_line = [c for c in df.columns if '鍍鋅線 C' in str(c) or ('HARDNESS' in str(c) and 'C' in str(c))]
+    if possible_line:
+        df["Hardness_LINE"] = df[possible_line[0]]
+    else:
+        # Nếu vẫn không tìm ra, lấy bừa cột HARDNESS nào đó (không phải 冶金) làm LINE
+        fallback_hard = [c for c in df.columns if 'HARDNESS' in str(c) and '冶金' not in str(c)]
+        if fallback_hard:
+            df["Hardness_LINE"] = df[fallback_hard[0]]
+        else:
+            st.error("⚠️ Không tìm thấy cột dữ liệu độ cứng Line (HARDNESS 鍍鋅線 C). Vui lòng kiểm tra lại file Google Sheet.")
+            st.stop()
+
+# 4. Chốt chặn cho Hardness_LAB
+if "Hardness_LAB" not in df.columns:
+    possible_lab = [c for c in df.columns if '冶金' in str(c) or 'LAB' in str(c)]
+    df["Hardness_LAB"] = df[possible_lab[0]] if possible_lab else df["Hardness_LINE"]
+
+# ================================
 
 # ================================
 # LỌC ĐỘC QUYỀN A118T & XỬ LÝ SỐ LIỆU

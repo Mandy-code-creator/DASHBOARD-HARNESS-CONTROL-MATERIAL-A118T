@@ -649,15 +649,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ys_act_str = check_limit(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)
                 el_act_str = check_limit(row.EL_min, row.EL_max, row.Std_EL_min, 0, is_el=True)
 
+                ts_std = bin_data['TS'].std()
+                ys_std = bin_data['YS'].std()
+                el_std = bin_data['EL'].std()
+
                 corr_bin_summary.append({
                     "Specification List": specs_str, "Material": g.get("Material", "N/A"), "Gauge": g.get("Order_Gauge", "N/A"),
                     "Hardness Bin": row.HRB_bin, "N": row.N_coils,
                     "TS Spec": f"{row.Std_TS_min:.0f}~{row.Std_TS_max:.0f}" if pd.notna(row.Std_TS_max) and row.Std_TS_max < 9000 else (f"≥{row.Std_TS_min:.0f}" if pd.notna(row.Std_TS_min) else "-"),
-                    "TS Actual": ts_act_str, "TS Mean": f"{row.TS_mean:.1f}", "TS Std": f"{bin_data['TS'].std():.1f}",
+                    "TS Actual": ts_act_str, "TS Mean": f"{row.TS_mean:.1f}", "TS Std": f"{ts_std:.1f}" if pd.notna(ts_std) else "-",
                     "YS Spec": f"{row.Std_YS_min:.0f}~{row.Std_YS_max:.0f}" if pd.notna(row.Std_YS_max) and row.Std_YS_max < 9000 else (f"≥{row.Std_YS_min:.0f}" if pd.notna(row.Std_YS_min) else "-"),
-                    "YS Actual": ys_act_str, "YS Mean": f"{row.YS_mean:.1f}", "YS Std": f"{bin_data['YS'].std():.1f}",
+                    "YS Actual": ys_act_str, "YS Mean": f"{row.YS_mean:.1f}", "YS Std": f"{ys_std:.1f}" if pd.notna(ys_std) else "-",
                     "EL Spec": f"≥{row.Std_EL_min:.0f}" if pd.notna(row.Std_EL_min) else "-",
-                    "EL Actual": el_act_str, "EL Mean": f"{row.EL_mean:.1f}", "EL Std": f"{bin_data['EL'].std():.1f}"
+                    "EL Actual": el_act_str, "EL Mean": f"{row.EL_mean:.1f}", "EL Std": f"{el_std:.1f}" if pd.notna(el_std) else "-"
                 })
 
         if i == len(valid) - 1 and 'corr_bin_summary' in locals() and len(corr_bin_summary) > 0:

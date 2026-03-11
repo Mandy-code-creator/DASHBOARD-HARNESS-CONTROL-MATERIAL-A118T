@@ -77,7 +77,7 @@ def fig_to_png(fig):
 # ================================
 # LOAD MAIN DATA
 # ================================
-DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
+DATA_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMxBlogY84Z0cRCj2s/export?format=csv&gid=0"
 
 @st.cache_data
 def load_main():

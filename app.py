@@ -1,5 +1,5 @@
 # ================================
-# FULL STREAMLIT APP – A118T FINAL (BUG FIXED & OPTIMIZED)
+# FULL STREAMLIT APP – A118T ULTIMATE STABLE VERSION
 # ================================
 
 import streamlit as st
@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # ================================
 # PAGE CONFIG & CSS
@@ -34,7 +36,7 @@ def add_custom_css():
 add_custom_css()
 
 # ================================
-# GLOBAL VARIABLES
+# GLOBAL VARIABLES (TARGET 85-90)
 # ================================
 TARGET_MIN = 85.0
 TARGET_MAX = 90.0
@@ -46,16 +48,12 @@ DATA_URL = "https://docs.google.com/spreadsheets/d/1hC5nnxqDLjF8-wUm8gtj11_5HFMx
 
 @st.cache_data
 def load_main():
-    try:
-        r = requests.get(DATA_URL)
-        r.encoding = "utf-8"
-        if "<!doctype html>" in r.text[:50].lower() or "<html" in r.text[:50].lower():
-            st.error("🚨 LỖI BẢO MẬT: Link Google Sheet đang bị khóa. Vui lòng mở quyền 'Anyone with the link'.")
-            st.stop()
-        return pd.read_csv(StringIO(r.text))
-    except Exception as e:
-        st.error(f"Lỗi khi tải dữ liệu: {e}")
+    r = requests.get(DATA_URL)
+    r.encoding = "utf-8"
+    if "<!doctype html>" in r.text[:50].lower() or "<html" in r.text[:50].lower():
+        st.error("🚨 LỖI BẢO MẬT: Link Google Sheet đang bị khóa. Vui lòng vào Google Sheet -> Share -> Chọn 'Anyone with the link' (Bất kỳ ai có liên kết).")
         st.stop()
+    return pd.read_csv(StringIO(r.text))
 
 raw = load_main()
 
@@ -78,9 +76,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# BỘ QUÉT TIÊU ĐỀ CỘT
-# ---------------------------------------------------------
+# BỘ QUÉT TIÊU ĐỀ CỘT TUYỆT ĐỐI
 col_mapping = {}
 for col in raw.columns:
     clean_name = re.sub(r'[\s_]+', '', str(col)).upper()
@@ -107,33 +103,25 @@ for col in raw.columns:
 df = raw.rename(columns=col_mapping)
 
 if "Hardness_LINE" not in df.columns:
-    st.error(f"⚠️ Không tìm thấy cột Độ cứng (Hardness_LINE). Các cột hiện có: {list(raw.columns)}")
+    st.error(f"⚠️ Dữ liệu bị lỗi cột Độ cứng. Các cột hiện có: {list(raw.columns)}")
     st.stop()
 
 if "COIL_NO" not in df.columns: df["COIL_NO"] = df.index 
 if "Material" not in df.columns: df["Material"] = "A118T"
 if "Product_Spec" not in df.columns: df["Product_Spec"] = "N/A"
 
-# Điền khuyết dữ liệu để tránh lỗi khi gộp nhóm
-df["Product_Spec"] = df["Product_Spec"].fillna("N/A")
-df["Material"] = df["Material"].fillna("Unknown")
-
-# ================================
 # LỌC ĐỘC QUYỀN A118T & CÁC SPECS YÊU CẦU
-# ================================
 allowed_keywords = "A118T|2657/G01T|N SZACC|NSZACC"
 df = df[
     (df["Material"].astype(str).str.upper().str.contains(allowed_keywords, regex=True)) | 
-    (df["Product_Spec"].astype(str).str.upper().str.contains(allowed_keywords, regex=True))
+    (df.get("Product_Spec", pd.Series(dtype=str)).astype(str).str.upper().str.contains(allowed_keywords, regex=True))
 ].copy()
 
 if df.empty:
     st.error("⚠️ Không tìm thấy dữ liệu cho mã A118T, 2657/G01T hoặc N SZACC.")
     st.stop()
 
-# ================================
 # XỬ LÝ SỐ LIỆU & LOẠI BỎ GIÁ TRỊ 0/NA
-# ================================
 df["Limit_Min"] = 80.0
 df["Limit_Max"] = 93.0
 
@@ -152,7 +140,9 @@ if "Std_Text" in df.columns:
 
 df["Lab_Min"] = df["Limit_Min"]
 df["Lab_Max"] = df["Limit_Max"]
+df["Rule_Name"] = "Direct Spec"
 
+# Thay thế giá trị 0 thành NA để loại bỏ Outlier
 test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", 
              "Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", 
              "Standard EL min", "Standard EL max"]
@@ -161,6 +151,7 @@ for c in test_cols:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce").replace(0, np.nan)
 
+# Ép định dạng 2 chữ số cho Gauge
 if "Order_Gauge" in df.columns:
     df["Order_Gauge"] = pd.to_numeric(df["Order_Gauge"], errors="coerce")
     df["Order_Gauge"] = df["Order_Gauge"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
@@ -176,10 +167,10 @@ if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
 
-all_specs = sorted(df["Product_Spec"].astype(str).unique())
+all_specs = sorted(df["Product_Spec"].dropna().astype(str).unique()) if "Product_Spec" in df else []
 all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolling_Type" in df else []
 all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
-all_gauge = sorted(df["Order_Gauge"].astype(str).unique()) if "Order_Gauge" in df else []
+all_gauge = sorted(df["Order_Gauge"].dropna().unique()) if "Order_Gauge" in df else []
 all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
 
 specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
@@ -190,10 +181,10 @@ qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup)) if
 
 df_master_full = df.copy() 
 
-if specs_filter != "All": df = df[df["Product_Spec"].astype(str) == specs_filter]
+if specs_filter != "All" and "Product_Spec" in df: df = df[df["Product_Spec"].astype(str) == specs_filter]
 if rolling != "All" and "Rolling_Type" in df: df = df[df["Rolling_Type"].astype(str) == rolling]
 if metal != "All" and "Metallic_Type" in df: df = df[df["Metallic_Type"].astype(str) == metal]
-if gauge != "All" and "Order_Gauge" in df: df = df[df["Order_Gauge"].astype(str) == gauge]
+if gauge != "All" and "Order_Gauge" in df: df = df[df["Order_Gauge"] == gauge]
 if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
 
 view_mode = st.sidebar.radio(
@@ -224,7 +215,7 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
-# 0. EXECUTIVE KPI DASHBOARD
+# 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
     st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
@@ -446,6 +437,67 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
 
 # ==============================================================================
+# 👑 MASTER DICTIONARY EXPORT (FULL VIEW)
+# ==============================================================================
+if view_mode == "👑 Master Dictionary Export":
+    st.markdown("---")
+    st.header("👑 Master Mechanical Properties Dictionary (A118T)")
+    
+    col_sig1, col_sig2 = st.columns(2)
+    with col_sig1: target_k = st.number_input("🎯 Target Zone Multiplier (Default: 1.0 σ)", value=1.0, step=0.1, key="k_target")
+    with col_sig2: control_k = st.number_input("🚧 Control Limit Multiplier (Default: 3.0 σ)", value=3.0, step=0.5, key="k_control")
+    
+    if st.button("🚀 Generate & Download Master Dictionary", type="primary"):
+        master_data = []
+        clean_master_df = df_master_full.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
+        
+        for keys, group in clean_master_df.groupby(GROUP_COLS):
+            valid_coils_count = len(group)
+            if valid_coils_count < 3: continue 
+            
+            mean_hrb = group['Hardness_LINE'].mean()
+            std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
+            mrs = np.abs(np.diff(group['Hardness_LINE'].values)) 
+            sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else std_hrb 
+            
+            t_min, t_max = mean_hrb - (target_k * std_hrb), mean_hrb + (target_k * std_hrb)
+            c_min, c_max = mean_hrb - (control_k * std_hrb), mean_hrb + (control_k * std_hrb)
+            imr_min, imr_max = mean_hrb - (control_k * sigma_imr), mean_hrb + (control_k * sigma_imr)
+            
+            ts_mu, ts_sig = group['TS'].mean(), group['TS'].std() if valid_coils_count > 1 else 0
+            ys_mu, ys_sig = group['YS'].mean(), group['YS'].std() if valid_coils_count > 1 else 0
+            el_mu, el_sig = group['EL'].mean(), group['EL'].std() if valid_coils_count > 1 else 0
+            
+            target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
+            if len(target_group) > 0:
+                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
+                curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
+                
+                exp_ts_min, exp_ts_max = target_group['TS'].mean() - (control_k * target_group['TS'].std()), target_group['TS'].mean() + (control_k * target_group['TS'].std())
+                exp_ys_min, exp_ys_max = target_group['YS'].mean() - (control_k * target_group['YS'].std()), target_group['YS'].mean() + (control_k * target_group['YS'].std())
+                exp_el_min, exp_el_max = max(0, target_group['EL'].mean() - (control_k * target_group['EL'].std())), target_group['EL'].mean() + (control_k * target_group['EL'].std())
+
+                master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(GROUP_COLS)}
+                master_dict.update({
+                    "Current HRB Limit": curr_limit_str, "Valid Coils (N)": valid_coils_count,
+                    "Std Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}", "I-MR Limit (HRB)": f"{imr_min:.1f} ~ {imr_max:.1f}",
+                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
+                    "TS Control": f"{ts_mu - control_k*ts_sig:.0f} ~ {ts_mu + control_k*ts_sig:.0f}", "Expected TS": f"{exp_ts_min:.0f} ~ {exp_ts_max:.0f}",
+                    "YS Control": f"{ys_mu - control_k*ys_sig:.0f} ~ {ys_mu + control_k*ys_sig:.0f}", "Expected YS": f"{exp_ys_min:.0f} ~ {exp_ys_max:.0f}",
+                    "EL Control": f"{max(0, el_mu - control_k*el_sig):.1f} ~ {el_mu + control_k*el_sig:.1f}", "Expected EL": f"{exp_el_min:.1f} ~ {exp_el_max:.1f}"
+                })
+                master_data.append(master_dict)
+        
+        if len(master_data) > 0:
+            output_buffer = BytesIO()
+            pd.DataFrame(master_data).to_excel(output_buffer, index=False)
+            st.success(f"✅ Dictionary successfully generated for **{len(master_data)} product groups**.")
+            st.download_button("📥 Download Master Report (Excel)", data=output_buffer.getvalue(), file_name=f"Master_Dictionary_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.ms-excel")
+        else: st.warning("Not enough data to generate dictionary.")
+    st.stop()
+
+# ==============================================================================
 # MAIN LOOP FOR ALL OTHER VIEWS 
 # ==============================================================================
 for i, (_, g) in enumerate(valid.iterrows()):
@@ -464,9 +516,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
     st.markdown(f"**Coils:** {sub['COIL_NO'].nunique()} | **Std Limit:** {lo:.1f} ~ {hi:.1f}")
         
     if view_mode == "📋 Data Inspection":
-        def h_ng(row): return ['background-color: #ffe6e6'] * len(row) if row['NG'] else [''] * len(row)
+        def highlight_ng_rows(row): return ['background-color: #ffe6e6'] * len(row) if row['NG'] else [''] * len(row)
         num_cols = sub.select_dtypes(include=[np.number]).columns.tolist()
-        st.dataframe(sub.style.format("{:.0f}", subset=[c for c in num_cols if c not in ['Limit_Min', 'Limit_Max', 'Order_Gauge']]).apply(h_ng, axis=1), use_container_width=True)
+        st.dataframe(sub.style.format("{:.0f}", subset=[c for c in num_cols if c not in ['Limit_Min', 'Limit_Max', 'Order_Gauge']]).apply(highlight_ng_rows, axis=1), use_container_width=True)
 
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
         tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
@@ -724,23 +776,87 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else: st.error("❌ No coils found matching these specs.")
 
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+        st.markdown(f"#### 🧮 AI Prediction Engine: {group_title}")
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+        
         if len(train_df) < 3:
-            st.warning("⚠️ Need at least 3 coils to activate AI Prediction.")
+            st.warning("⚠️ Cần ít nhất 3 cuộn thép có đủ số liệu cơ tính để kích hoạt AI Prediction.")
         else:
             col1, col2 = st.columns([1, 3])
-            with col1: target_h = st.number_input("🎯 Target Hardness", value=float(round(train_df["Hardness_LINE"].mean(), 1)), step=0.1, key=f"ai_{i}")
+            with col1:
+                mean_h = train_df["Hardness_LINE"].mean()
+                target_h = st.number_input("🎯 Target Hardness", value=float(round(mean_h, 1)), step=0.1, key=f"ai_{i}")
             
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
+            model_metrics = {}
+            
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
-                preds[col] = model.predict([[target_h]])[0] 
+                val = model.predict([[target_h]])[0]
+                preds[col] = val 
+                y_true = train_df[col].values
+                y_pred = model.predict(X_train)
+                r2 = r2_score(y_true, y_pred)
+                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+                model_metrics[col] = {"r2": r2, "rmse": rmse}
 
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} 
+            idx = list(range(len(train_df)))
+            nxt = len(train_df)
+
+            for col in ["TS", "YS", "EL"]:
+                sec = (col == "EL")
+                fig.add_trace(go.Scatter(
+                    x=idx, y=train_df[col], mode='lines', line=dict(color=colors[col], width=2, shape='spline'), 
+                    name=f"{col} (History)", opacity=0.6, hoverinfo='y' 
+                ), secondary_y=sec)
+                
+                last_val_raw = train_df[col].iloc[-1]
+                pred_clean = round(preds[col], 1) if col == "EL" else int(round(preds[col]))
+                last_clean = round(last_val_raw, 1) if col == "EL" else int(round(last_val_raw))
+                
+                fig.add_trace(go.Scatter(
+                    x=[idx[-1], nxt], y=[last_val_raw, preds[col]], mode='lines',
+                    line=dict(color=colors[col], width=2, dash='dot'), showlegend=False, hoverinfo='skip'
+                ), secondary_y=sec)
+
+                fig.add_trace(go.Scatter(
+                    x=[nxt], y=[preds[col]], mode='markers+text', text=[f"<b>{pred_clean}</b>"], 
+                    textposition="middle right" if nxt < 10 else "top center",
+                    marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
+                    name=f"Pred {col}",
+                    hovertemplate=(f"<b>🎯 Pred {col}: {pred_clean}</b><br>🔙 Last {col}: {last_clean}<br>📈 Change: {pred_clean - last_clean:.1f}<extra></extra>")
+                ), secondary_y=sec)
+
+            fig.add_vline(x=nxt - 0.5, line_width=1, line_dash="dash", line_color="gray")
+            fig.add_annotation(x=nxt - 0.5, y=1.05, yref="paper", text="Forecast Zone ➔", showarrow=False, font=dict(color="gray"))
+
+            fig.update_layout(
+                height=500, title=dict(text=f"📈 AI Prediction at Target Hardness = {target_h}", font=dict(size=18)),
+                plot_bgcolor="white", hovermode="closest", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=20, r=20, t=80, b=20)
+            )
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee', title="Coil Sequence")
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False, title="Strength (MPa)")
+            fig.update_yaxes(showgrid=False, secondary_y=True, title="Elongation (%)")
+
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("##### 🏁 Forecast Summary & Confidence Score")
             c1, c2, c3 = st.columns(3)
-            c1.metric("Tensile Strength (TS)", f"{int(round(preds['TS']))} MPa")
-            c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa")
-            c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %")
+            def get_delta(p, l): return round(p - l, 1)
+            last_ts = train_df["TS"].iloc[-1]; last_ys = train_df["YS"].iloc[-1]; last_el = train_df["EL"].iloc[-1]
+
+            c1.metric("Tensile Strength (TS)", f"{int(round(preds['TS']))} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last")
+            c1.caption(f"🎯 **R² Score:** {model_metrics['TS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['TS']['rmse']:.1f}")
+
+            c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
+            c2.caption(f"🎯 **R² Score:** {model_metrics['YS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['YS']['rmse']:.1f}")
+
+            c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
+            c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['EL']['rmse']:.1f}")
 
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         if i == 0: all_groups_summary = []
@@ -784,121 +900,3 @@ for i, (_, g) in enumerate(valid.iterrows()):
             styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
                                       .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
-    elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown(f"#### 🧮 AI Prediction Engine: {group_title}")
-        
-        # Bỏ đi các dòng thiếu dữ liệu để AI học
-        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
-        
-        if len(train_df) < 3:
-            st.warning("⚠️ Cần ít nhất 3 cuộn thép (coils) có đủ số liệu cơ tính để kích hoạt AI Prediction.")
-        else:
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                mean_h = train_df["Hardness_LINE"].mean()
-                target_h = st.number_input("🎯 Target Hardness", value=float(round(mean_h, 1)), step=0.1, key=f"ai_{i}")
-            
-            X_train = train_df[["Hardness_LINE"]].values
-            preds = {}
-            model_metrics = {}
-            
-            for col in ["TS", "YS", "EL"]:
-                # Huấn luyện mô hình
-                model = LinearRegression().fit(X_train, train_df[col].values)
-                val = model.predict([[target_h]])[0]
-                preds[col] = val 
-                
-                # Tính độ tin cậy (R2 và RMSE)
-                y_true = train_df[col].values
-                y_pred = model.predict(X_train)
-                r2 = r2_score(y_true, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-                model_metrics[col] = {"r2": r2, "rmse": rmse}
-
-            # ================================
-            # VẼ BIỂU ĐỒ TƯƠNG TÁC PLOTLY
-            # ================================
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-            colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} 
-            idx = list(range(len(train_df)))
-            nxt = len(train_df)
-
-            for col in ["TS", "YS", "EL"]:
-                sec = (col == "EL")
-                
-                # 1. Đường lịch sử (History)
-                fig.add_trace(go.Scatter(
-                    x=idx, y=train_df[col], 
-                    mode='lines', 
-                    line=dict(color=colors[col], width=2, shape='spline'), 
-                    name=f"{col} (History)",
-                    opacity=0.6,
-                    hoverinfo='y' 
-                ), secondary_y=sec)
-                
-                last_val_raw = train_df[col].iloc[-1]
-                pred_clean = round(preds[col], 1) if col == "EL" else int(round(preds[col]))
-                last_clean = round(last_val_raw, 1) if col == "EL" else int(round(last_val_raw))
-                
-                # 2. Đường đứt nét nối tới tương lai (Connector)
-                fig.add_trace(go.Scatter(
-                    x=[idx[-1], nxt], y=[last_val_raw, preds[col]],
-                    mode='lines',
-                    line=dict(color=colors[col], width=2, dash='dot'),
-                    showlegend=False,
-                    hoverinfo='skip'
-                ), secondary_y=sec)
-
-                # 3. Điểm Dự Báo (Tương lai)
-                fig.add_trace(go.Scatter(
-                    x=[nxt], y=[preds[col]], 
-                    mode='markers+text', 
-                    text=[f"<b>{pred_clean}</b>"], 
-                    textposition="middle right" if nxt < 10 else "top center",
-                    marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
-                    name=f"Pred {col}",
-                    hovertemplate=(
-                        f"<b>🎯 Pred {col}: {pred_clean}</b><br>"
-                        f"🔙 Last {col}: {last_clean}<br>"
-                        f"📈 Change: {pred_clean - last_clean:.1f}"
-                        "<extra></extra>"
-                    )
-                ), secondary_y=sec)
-
-            # Phân tách vùng Lịch sử và Dự báo
-            fig.add_vline(x=nxt - 0.5, line_width=1, line_dash="dash", line_color="gray")
-            fig.add_annotation(x=nxt - 0.5, y=1.05, yref="paper", text="Forecast Zone ➔", showarrow=False, font=dict(color="gray"))
-
-            fig.update_layout(
-                height=500,
-                title=dict(text=f"📈 AI Prediction at Target Hardness = {target_h}", font=dict(size=18)),
-                plot_bgcolor="white",
-                hovermode="closest",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(l=20, r=20, t=80, b=20)
-            )
-            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee', title="Coil Sequence")
-            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False, title="Strength (MPa)")
-            fig.update_yaxes(showgrid=False, secondary_y=True, title="Elongation (%)")
-
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # ================================
-            # CARDS SUMMARY KÈM ĐỘ TIN CẬY
-            # ================================
-            st.markdown("##### 🏁 Forecast Summary & Confidence Score")
-            c1, c2, c3 = st.columns(3)
-            
-            def get_delta(p, l): return round(p - l, 1)
-            last_ts = train_df["TS"].iloc[-1]
-            last_ys = train_df["YS"].iloc[-1]
-            last_el = train_df["EL"].iloc[-1]
-
-            c1.metric("Tensile Strength (TS)", f"{int(round(preds['TS']))} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last")
-            c1.caption(f"🎯 **R² Score:** {model_metrics['TS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['TS']['rmse']:.1f}")
-
-            c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
-            c2.caption(f"🎯 **R² Score:** {model_metrics['YS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['YS']['rmse']:.1f}")
-
-            c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
-            c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['EL']['rmse']:.1f}")

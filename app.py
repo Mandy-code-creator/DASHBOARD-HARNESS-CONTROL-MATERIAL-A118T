@@ -215,6 +215,7 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
+# ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
@@ -307,37 +308,59 @@ if view_mode == "📊 Executive KPI Dashboard":
             
             st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             
-            st.markdown("#### 🔔 Visual Deep Dive: Top 10 Risk Distributions")
+            # --- 更新：包含所有機械性能規格的直方圖矩陣 (Updated: Histogram matrix including all mech specs) ---
+            st.markdown("#### 🔔 Visual Deep Dive: Top 10 Risk Distributions (Hardness & Mechanical)")
             top_10_risks = risk_top.head(10).to_dict('records')
             
             if len(top_10_risks) > 0:
-                chart_cols = st.columns(min(len(top_10_risks), 3))
+                chart_cols = st.columns(2) # 變更為每行 2 個以提供更多空間 (Changed to 2 per row for more space)
                 for idx, item in enumerate(top_10_risks):
                     spec, mat, gauge_val = item.get("Specification", "N/A"), item.get("Material", "N/A"), item.get("Gauge", "N/A")
                     tdf = df_kpi[(df_kpi.get("Product_Spec", "") == spec) & (df_kpi.get("Material", "") == mat) & (df_kpi.get("Order_Gauge", "") == gauge_val)]
                     
                     if not tdf.empty:
-                        fig, ax = plt.subplots(figsize=(6, 4))
-                        h_data = tdf["Hardness_LINE"].dropna()
-                        ax.hist(h_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.8)
+                        fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+                        fig.suptitle(f"TOP {idx+1}: {spec} | Mat: {mat} | Gauge: {gauge_val}", fontsize=12, fontweight="bold")
                         
-                        m_val, s_val = h_data.mean(), h_data.std()
-                        if s_val > 0:
-                            x_ax = np.linspace(h_data.min() - 2, h_data.max() + 2, 100)
-                            ax.plot(x_ax, (1/(s_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_ax - m_val) / s_val)**2), color="#cc0000", lw=2)
+                        # 準備 4 個圖表的設定 (Prepare configurations for 4 charts)
+                        metrics = [
+                            {"col": "Hardness_LINE", "name": "Hardness (HRB)", "min": tdf["Limit_Min"].iloc[0] if "Limit_Min" in tdf.columns else 0, "max": tdf["Limit_Max"].iloc[0] if "Limit_Max" in tdf.columns else 0, "ax": axes[0, 0], "color": "#1f77b4"},
+                            {"col": "TS", "name": "Tensile Strength (TS)", "min": tdf["Standard TS min"].max() if "Standard TS min" in tdf.columns else 0, "max": tdf["Standard TS max"].min() if "Standard TS max" in tdf.columns else 0, "ax": axes[0, 1], "color": "#2ca02c"},
+                            {"col": "YS", "name": "Yield Strength (YS)", "min": tdf["Standard YS min"].max() if "Standard YS min" in tdf.columns else 0, "max": tdf["Standard YS max"].min() if "Standard YS max" in tdf.columns else 0, "ax": axes[1, 0], "color": "#ff7f0e"},
+                            {"col": "EL", "name": "Elongation (EL)", "min": tdf["Standard EL min"].max() if "Standard EL min" in tdf.columns else 0, "max": 0, "ax": axes[1, 1], "color": "#9467bd"}
+                        ]
                         
-                        l_min, l_max = tdf["Limit_Min"].iloc[0], tdf["Limit_Max"].iloc[0]
-                        ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"Std LSL ({l_min:.0f})")
-                        if l_max < 9000: ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"Std USL ({l_max:.0f})")
-                        
-                        ax.axvline(TARGET_MIN, color="green", linestyle=":", lw=2, label=f"Target ({TARGET_MIN})")
-                        ax.axvline(TARGET_MAX, color="green", linestyle=":", lw=2, label=f"Target ({TARGET_MAX})")
-                        ax.axvspan(TARGET_MIN, TARGET_MAX, color="green", alpha=0.1)
+                        for m in metrics:
+                            ax = m["ax"]
+                            d = tdf[m["col"]].dropna()
+                            if not d.empty:
+                                ax.hist(d, bins=15, color=m["color"], edgecolor="white", density=True, alpha=0.6)
+                                m_val, s_val = d.mean(), d.std()
+                                if s_val > 0:
+                                    x_ax = np.linspace(d.min() - 2*s_val, d.max() + 2*s_val, 100)
+                                    ax.plot(x_ax, (1/(s_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_ax - m_val) / s_val)**2), color="#cc0000", lw=2)
+                                
+                                # 繪製規格界限 (Plot specification limits)
+                                if pd.notna(m["min"]) and m["min"] > 0:
+                                    ax.axvline(m["min"], color="black", linestyle="--", lw=1.5, label=f"LSL ({m['min']:.0f})")
+                                if pd.notna(m["max"]) and 0 < m["max"] < 9000:
+                                    ax.axvline(m["max"], color="black", linestyle="--", lw=1.5, label=f"USL ({m['max']:.0f})")
+                                
+                                # 為硬度圖表添加目標區域 (Add target zone for Hardness chart)
+                                if m["col"] == "Hardness_LINE":
+                                    ax.axvline(TARGET_MIN, color="green", linestyle=":", lw=2, label="Target")
+                                    ax.axvline(TARGET_MAX, color="green", linestyle=":", lw=2)
+                                    ax.axvspan(TARGET_MIN, TARGET_MAX, color="green", alpha=0.1)
 
-                        ax.set_title(f"TOP {idx+1}: {spec}\nMat: {mat} | Gauge: {gauge_val} | N={len(h_data)}", fontsize=10, fontweight="bold")
-                        ax.legend(fontsize=8, loc="upper right")
-                        ax.grid(alpha=0.3, linestyle=":")
-                        chart_cols[idx % 3].pyplot(fig)
+                                ax.set_title(f"{m['name']} (N={len(d)})", fontsize=10, fontweight="bold")
+                                ax.legend(fontsize=7, loc="upper right")
+                                ax.grid(alpha=0.3, linestyle=":")
+                            else:
+                                ax.set_title(f"{m['name']} (No Data)", fontsize=10)
+                                ax.axis('off')
+                                
+                        plt.tight_layout()
+                        chart_cols[idx % 2].pyplot(fig)
             
             st.markdown("#### 📑 Export Actionable Report")
             import streamlit.components.v1 as components

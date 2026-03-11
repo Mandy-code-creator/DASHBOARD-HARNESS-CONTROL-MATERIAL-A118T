@@ -128,24 +128,30 @@ for c in numeric_cols:
 df = df.dropna(subset=["Hardness_LINE"])
 
 # ================================
+# ================================
 # SIDEBAR FILTER (DYNAMIC)
 # ================================
-st.sidebar.header("🎛 FILTER (A118T)")
+st.sidebar.header("🎛 FILTER (A118T & Specs)")
 
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
 
+# Thêm Product_Spec vào bộ lọc
+all_specs = sorted(df["Product_Spec"].dropna().astype(str).unique()) if "Product_Spec" in df else []
 all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolling_Type" in df else []
 all_coatmass = sorted(df["Top_Coatmass"].dropna().astype(str).unique()) if "Top_Coatmass" in df else []
 all_gauge = sorted(df["Order_Gauge"].dropna().astype(float).unique()) if "Order_Gauge" in df else []
 
-rolling = st.sidebar.selectbox("1. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
-coatmass = st.sidebar.selectbox("2. Top Coatmass", ["All"] + list(all_coatmass)) if all_coatmass else "All"
-gauge = st.sidebar.selectbox("3. Order Gauge (Thickness)", ["All"] + list(all_gauge)) if all_gauge else "All"
+specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
+rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
+coatmass = st.sidebar.selectbox("3. Top Coatmass", ["All"] + list(all_coatmass)) if all_coatmass else "All"
+gauge = st.sidebar.selectbox("4. Order Gauge (Thickness)", ["All"] + list(all_gauge)) if all_gauge else "All"
 
 df_master_full = df.copy() 
 
+# Áp dụng các bộ lọc
+if specs_filter != "All" and "Product_Spec" in df: df = df[df["Product_Spec"].astype(str) == specs_filter]
 if rolling != "All" and "Rolling_Type" in df: df = df[df["Rolling_Type"].astype(str) == rolling]
 if coatmass != "All" and "Top_Coatmass" in df: df = df[df["Top_Coatmass"].astype(str) == str(coatmass)]
 if gauge != "All" and "Order_Gauge" in df: df = df[df["Order_Gauge"].astype(float) == float(gauge)]
@@ -167,7 +173,8 @@ view_mode = st.sidebar.radio(
     ]
 )
 
-GROUP_COLS = [c for c in ["Rolling_Type", "Top_Coatmass", "Order_Gauge", "Material"] if c in df.columns]
+# Thêm Product_Spec vào cấu trúc gộp nhóm (Group)
+GROUP_COLS = [c for c in ["Product_Spec", "Rolling_Type", "Top_Coatmass", "Order_Gauge", "Material"] if c in df.columns]
 if not GROUP_COLS: GROUP_COLS = ["Material"]
 
 cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
@@ -176,7 +183,6 @@ valid = cnt[cnt["N_Coils"] >= 1]
 if valid.empty:
     st.warning("⚠️ No valid coils found for the current filter. Please adjust the sidebar.")
     st.stop()
-
 # ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================

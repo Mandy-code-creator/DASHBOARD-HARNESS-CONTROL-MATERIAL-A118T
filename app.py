@@ -770,7 +770,113 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 file_name=excel_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+elif view_mode == "⚙️ Mech Props Analysis":
+        
+        # 1. Khởi tạo danh sách thống kê ở vòng lặp đầu tiên
+        if i == 0:
+            ts_summary, ys_summary, el_summary = [], [], []
 
+        props_config = [
+            {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
+            {"col": "YS", "name": "Yield Strength (YS)", "color": "#2ca02c", "min_c": "Standard YS min", "max_c": "Standard YS max"},
+            {"col": "EL", "name": "Elongation (EL)", "color": "#ff7f0e", "min_c": "Standard EL min", "max_c": "Standard EL max"}
+        ]
+        
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        has_data = False
+        
+        # Lấy dải độ cứng thực tế của nhóm
+        h_data = sub["Hardness_LINE"].dropna()
+        hardness_range_str = f"{h_data.min():.1f} ~ {h_data.max():.1f}" if not h_data.empty else "N/A"
+        
+        # 2. Xử lý và vẽ biểu đồ ĐỘC LẬP cho từng chỉ số (TS, YS, EL)
+        for j, cfg in enumerate(props_config):
+            col = cfg["col"]
+            # Chỉ drop NA của riêng cột đang xét, không ảnh hưởng cột khác
+            data = sub[col].dropna()
+            
+            if not data.empty:
+                has_data = True
+                mean, std = data.mean(), data.std() if len(data) > 1 else 0
+                
+                # Lấy Spec giới hạn
+                spec_min = sub[cfg["min_c"]].max() if cfg["min_c"] in sub.columns else 0
+                spec_max = sub[cfg["max_c"]].min() if cfg["max_c"] in sub.columns else 0
+                if pd.isna(spec_min): spec_min = 0
+                if pd.isna(spec_max): spec_max = 0
+                
+                # Tính toán giới hạn 3-Sigma
+                lcl_3s = mean - 3 * std
+                ucl_3s = mean + 3 * std
+                
+                # Vẽ Histogram và đường cong phân phối
+                axes[j].hist(data, bins=15, color=cfg["color"], alpha=0.5, density=True)
+                if std > 0:
+                    x_p = np.linspace(data.min() - 3*std, data.max() + 3*std, 200)
+                    y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
+                    axes[j].plot(x_p, y_p, color=cfg["color"], lw=2)
+                
+                # Vẽ các đường Spec và 3-Sigma
+                if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2)
+                if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2)
+                axes[j].axvline(lcl_3s, color="blue", linestyle=":", linewidth=1.5)
+                axes[j].axvline(ucl_3s, color="blue", linestyle=":", linewidth=1.5)
+                
+                axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
+                
+                # Lưu data vào bảng tổng hợp
+                row_data = {
+                    "Group": group_title,
+                    "N": len(data),
+                    "Hardness Range (HRB)": hardness_range_str,
+                    "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
+                    "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
+                    "Mean": f"{mean:.1f}",
+                    "Std Dev": f"{std:.1f}",
+                    "LCL (-3σ)": f"{lcl_3s:.1f}", 
+                    "UCL (+3σ)": f"{ucl_3s:.1f}"  
+                }
+                if col == "TS": ts_summary.append(row_data)
+                elif col == "YS": ys_summary.append(row_data)
+                elif col == "EL": el_summary.append(row_data)
+            else:
+                axes[j].set_title(f"{cfg['name']}\n(No Data)")
+            
+            axes[j].grid(alpha=0.3, linestyle="--")
+
+        if has_data:
+            st.pyplot(fig)
+        else:
+            st.warning("⚠️ Không có dữ liệu Cơ tính (TS/YS/EL) cho nhóm này.")
+
+        # --- 3. HIỂN THỊ BẢNG TỔNG HỢP VÀ XUẤT EXCEL Ở CUỐI ---
+        if i == len(valid) - 1:
+            st.markdown("---")
+            st.markdown("## 📊 Mechanical Properties Comprehensive Report")
+            
+            def display_summary_table(title, data_list, color_code):
+                if data_list:
+                    st.markdown(f"#### {title}")
+                    df_sum = pd.DataFrame(data_list)
+                    styled_df = df_sum.style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
+                                        .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Hardness Range (HRB)']) \
+                                        .set_properties(**{'background-color': color_code, 'color': '#004085'}, subset=['LCL (-3σ)', 'UCL (+3σ)'])
+                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+            display_summary_table("1️⃣ Tensile Strength (TS) Summary", ts_summary, "#e6f2ff") 
+            display_summary_table("2️⃣ Yield Strength (YS) Summary", ys_summary, "#f2fff2")   
+            display_summary_table("3️⃣ Elongation (EL) Summary", el_summary, "#fff5e6")        
+
+            if ts_summary or ys_summary or el_summary:
+                import datetime
+                from io import BytesIO
+                today_str = datetime.datetime.now().strftime("%Y%m%d")
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    if ts_summary: pd.DataFrame(ts_summary).to_excel(writer, sheet_name='TS_Summary', index=False)
+                    if ys_summary: pd.DataFrame(ys_summary).to_excel(writer, sheet_name='YS_Summary', index=False)
+                    if el_summary: pd.DataFrame(el_summary).to_excel(writer, sheet_name='EL_Summary', index=False)
+                st.download_button("📥 Export Full Mech Report (Excel)", data=output.getvalue(), file_name=f"Mech_Report_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         c1, c2 = st.columns(2)
         actual_min = float(sub["Hardness_LINE"].min()) if not sub["Hardness_LINE"].empty else 0.0

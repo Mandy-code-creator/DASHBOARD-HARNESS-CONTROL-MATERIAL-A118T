@@ -895,8 +895,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else:
             with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
                 c1, c2 = st.columns(2)
-                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=f"sig_{i}")
-                iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=f"iqr_{i}")
+                # Đổi mặc định (value) thành 2.0
+                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_{i}")
+                # Đổi mặc định (value) thành 0.5 và hạ min_value xuống 0.1 để bạn dễ kéo thả hơn
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_{i}")
 
             spec_min = lo
             spec_max = hi

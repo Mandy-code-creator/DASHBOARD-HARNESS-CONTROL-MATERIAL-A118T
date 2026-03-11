@@ -617,12 +617,18 @@ for i, (_, g) in enumerate(valid.iterrows()):
             p_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
 
             for j, row in enumerate(summary.itertuples()):
-                ax.annotate(f"{row.TS_mean:.0f}", (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
-                ax.annotate(f"{row.YS_mean:.0f}", (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
-                
+                # Quét giới hạn cơ tính để cảnh báo ĐỎ
+                ts_min, ts_max = row.Std_TS_min, row.Std_TS_max
+                ys_min, ys_max = row.Std_YS_min, row.Std_YS_max
                 el_spec = row.Std_EL_min if pd.notna(row.Std_EL_min) else 0
-                is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
-                ax.annotate(f"{row.EL_mean:.1f}%" + ("❌" if is_fail else ""), (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color="red" if is_fail else "#ff7f0e", fontweight=("bold" if is_fail else "normal"))
+                
+                ts_fail = (pd.notna(ts_min) and ts_min > 0 and row.TS_mean < ts_min) or (pd.notna(ts_max) and ts_max > 0 and ts_max < 9000 and row.TS_mean > ts_max)
+                ys_fail = (pd.notna(ys_min) and ys_min > 0 and row.YS_mean < ys_min) or (pd.notna(ys_max) and ys_max > 0 and ys_max < 9000 and row.YS_mean > ys_max)
+                el_fail = (el_spec > 0) and (row.EL_mean < el_spec)
+                
+                ax.annotate(f"{row.TS_mean:.0f}" + (" ❌" if ts_fail else ""), (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ts_fail else "#1f77b4")
+                ax.annotate(f"{row.YS_mean:.0f}" + (" ❌" if ys_fail else ""), (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ys_fail else "#2ca02c")
+                ax.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""), (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color="red" if el_fail else "#ff7f0e", fontweight=("bold" if el_fail else "normal"))
 
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
             ax.set_title("Hardness vs Mechanical Properties", fontweight="bold"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)

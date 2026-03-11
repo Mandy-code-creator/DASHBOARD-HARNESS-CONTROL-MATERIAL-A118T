@@ -859,44 +859,237 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['EL']['rmse']:.1f}")
 
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
-        if i == 0: all_groups_summary = []
-        data = sub["Hardness_LINE"].dropna()
-        if len(data) < 5: st.warning(f"⚠️ Not enough data (N={len(data)})")
-        else:
-            mu, std_dev = data.mean(), data.std()
-            mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
-            
-            m1_min, m1_max = mu - 3*std_dev, mu + 3*std_dev
-            m4_min, m4_max = mu - 3*sigma_imr, mu + 3*sigma_imr
-            
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4")
-            ax.axvline(m1_min, c="red", ls=":", label="M1: Standard (3σ)")
-            ax.axvline(m1_max, c="red", ls=":")
-            ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
-            ax.axvline(m4_max, c="purple", ls="-.", lw=2)
-            
-            if lo > 0: ax.axvline(lo, c="black", lw=2, label="Standard Limit")
-            if hi > 0 and hi < 9000: ax.axvline(hi, c="black", lw=2)
-            
-            ax.axvline(TARGET_MIN, c="green", ls="--", lw=2, label=f"Target ({TARGET_MIN})")
-            ax.axvline(TARGET_MAX, c="green", ls="--", lw=2, label=f"Target ({TARGET_MAX})")
-            ax.axvspan(TARGET_MIN, TARGET_MAX, color="green", alpha=0.1)
+        
+        # --- 1. HIỂN THỊ GIẢI THÍCH DUY NHẤT MỘT LẦN Ở ĐẦU VIEW ---
+        if i == 0:
+            all_groups_summary = []
+            st.markdown("### 📘 管制界限計算方法說明 (Method Explanation)")
+            with st.expander("🔍 點擊查看方法差異 (Click to view method details)", expanded=True):
+                st.markdown("""
+                | 方法 (Method) | 名稱 (Name) | 運作原理 (Description) |
+                | :--- | :--- | :--- |
+                | **M1: Standard** | **標準統計法** | 基於全體數據計算。若存在極端異常值，界限容易被過度拉伸。 |
+                | **M2: IQR Robust** | **四分位距穩健統計法** | 自動剔除因操作失誤產生的「極端值」，使管制界限更符合實際規律。 |
+                | **M3: Smart Hybrid** | **智能混合法** | 結合統計趨勢與客戶規範 (Spec)，確保管制區間始終在安全範圍內。 |
+                | **M4: I-MR (SPC)** | **專業製程管制** | **最佳化方案：** 觀測相鄰鋼捲間的波動，是判斷製程是否「穩定」最科學的方法。 |
+                """)
 
-            ax.set_title(f"Control Limits Comparison")
-            ax.legend()
-            st.pyplot(fig)
+        st.markdown(f"### 🎛️ Control Limits Analysis: {group_title}")
+        data = sub["Hardness_LINE"].dropna()
+        data_lab = sub["Hardness_LAB"].dropna() if "Hardness_LAB" in sub.columns else pd.Series(dtype=float)
+        
+        if len(data) < 5: 
+            st.warning(f"⚠️ Dữ liệu không đủ để phân tích (N={len(data)})")
+        else:
+            with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
+                c1, c2 = st.columns(2)
+                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=f"sig_{i}")
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=f"iqr_{i}")
+
+            spec_min = lo
+            spec_max = hi
+            display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
             
+            mu = data.mean()
+            std_dev = data.std()
+            
+            # M1: Standard
+            m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
+            
+            # M2: IQR Robust
+            Q1 = data.quantile(0.25)
+            Q3 = data.quantile(0.75)
+            IQR = Q3 - Q1
+            clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
+            if clean_data.empty: clean_data = data
+            mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
+            if pd.isna(sigma_clean) or sigma_clean == 0: sigma_clean = std_dev
+            m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
+            
+            # M3: Smart Hybrid
+            m3_min = max(m2_min, spec_min)
+            m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
+            if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
+            
+            # M4: I-MR (SPC) - Tối ưu cho thép cuộn
+            mrs = np.abs(np.diff(data))
+            mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
+            sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
+            m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
+
+            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}"
+
             all_groups_summary.append({
-                "Group": group_title, "N": len(data), "Current Spec": f"{lo:.0f} ~ {hi:.0f}",
-                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}", "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "Status": "✅ Stable" if (hi > 0 and m4_max <= hi) else "⚠️ Narrow Spec"
+                "Group": group_title,
+                "N": len(data),
+                "Current Spec": spec_str,
+                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
+                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
+                "M3: Smart Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
+                "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
+                "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
             
+            # ==================================================================
+            # BIỂU ĐỒ 1: LIMITS COMPARISON (FULL WIDTH)
+            # ==================================================================
+            fig, ax = plt.subplots(figsize=(12, 5))
+            ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
+            if not data_lab.empty: ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
+            
+            ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
+            ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
+            ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
+            ax.axvline(m2_max, c="blue", ls="--", alpha=0.5)
+            ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
+            ax.axvline(m4_max, c="purple", ls="-.", lw=2)
+            ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
+            
+            if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
+            if display_max > 0: ax.axvline(display_max, c="black", lw=2)
+            
+            ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=11, fontweight="bold")
+            ax.legend(loc="upper right", fontsize="small")
+            st.pyplot(fig)
+
+            # ==================================================================
+            # BIỂU ĐỒ 2: CHI TIẾT M1 VS M4 VS SPECS
+            # ==================================================================
+            st.write("---") 
+            st.markdown(f"#### 📊 Detailed Distribution Analysis")
+            
+            from scipy.stats import norm
+            n_samples = len(data)
+            bins_sturges = int(round(1 + 3.322 * np.log10(n_samples))) if n_samples > 0 else 10
+            
+            fig2, ax2 = plt.subplots(figsize=(12, 6))
+            ax2.hist(data, bins=bins_sturges, density=True, alpha=0.2, color="#1f77b4", label="LINE Actual")
+            
+            x_min_val = min([m1_min, m4_min, spec_min, data.min()]) - 5
+            x_max_val = max([m1_max, m4_max, display_max, data.max()]) + 5
+            x_axis = np.linspace(x_min_val, x_max_val, 500)
+            
+            ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Curve (σ={std_dev:.2f})")
+            ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label=f"M4 Curve (σ={sigma_imr:.2f})")
+
+            ax2.axvline(m1_min, color="red", ls=":", lw=1.5); ax2.axvline(m1_max, color="red", ls=":", lw=1.5)
+            ax2.axvline(m4_min, color="purple", ls="-.", lw=2); ax2.axvline(m4_max, color="purple", ls="-.", lw=2)
+            
+            if spec_min > 0: ax2.axvline(spec_min, color="black", lw=2.5, label="Control Spec")
+            if display_max > 0: ax2.axvline(display_max, color="black", lw=2.5)
+
+            ax2.xaxis.set_major_locator(plt.MultipleLocator(5))
+            ax2.xaxis.set_minor_locator(plt.MultipleLocator(1))
+            ax2.grid(which='both', axis='x', linestyle='--', alpha=0.3)
+            ax2.set_title(f"Detailed Analysis (Sturges k={bins_sturges})", fontsize=11, fontweight="bold")
+            ax2.legend(loc="upper right", fontsize="small")
+            st.pyplot(fig2)
+
+            # ==================================================================
+            # 3. SUMMARY TABLE & EXCEL EXPORT (DỰ PHÓNG CƠ TÍNH)
+            # ==================================================================
+            st.write("---") 
+            st.markdown(f"#### 📌 Limit Summary & Mechanical Estimation")
+            
+            # Hàm nội suy cơ tính từ độ cứng A118T
+            def get_mech(h_val):
+                try:
+                    h = float(h_val)
+                    if h <= 0 or pd.isna(h): return 0, 0, 0
+                    ts = 5.5 * h + 75
+                    ys = ts * 0.75
+                    el = 100 - (1.1 * h)
+                    return ts, ys, el
+                except: return 0, 0, 0
+
+            target_k = 1.0 
+            new_target_min = mu - target_k * sigma_imr
+            new_target_max = mu + target_k * sigma_imr
+
+            rows = []
+            configs = [
+                ("🎯 Old Target Goal", spec_min, display_max, "-"),
+                ("🔴 M1: Standard (Historical)", m1_min, m1_max, std_dev),
+                ("🔵 M2: IQR (Robust)", m2_min, m2_max, sigma_clean),
+                ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, sigma_imr),
+                (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-")
+            ]
+
+            for cat, l_min, l_max, sig in configs:
+                ts_lmin, ys_lmin, el_lmax = get_mech(l_min)
+                ts_lmax, ys_lmax, el_lmin = get_mech(l_max)
+                
+                valid_data = data[(data >= l_min) & (data <= l_max)] if l_max > 0 else []
+                
+                if len(valid_data) > 0:
+                    act_min, act_max = valid_data.min(), valid_data.max()
+                    ts_amin, ys_amin, el_amax = get_mech(act_min)
+                    ts_amax, ys_amax, el_amin = get_mech(act_max)
+                    
+                    act_ts = f"{ts_amin:.0f} ~ {ts_amax:.0f}"
+                    act_ys = f"{ys_amin:.0f} ~ {ys_amax:.0f}"
+                    act_el = f"{el_amax:.1f} ~ {el_amin:.1f}"
+                else:
+                    act_ts = act_ys = act_el = "N/A"
+
+                rows.append({
+                    "Limit Type": cat,
+                    "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}",
+                    "Variation": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
+                    "Theoretical TS": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}",
+                    "Actual TS": act_ts,
+                    "Theoretical YS": f"{ys_lmin:.0f} ~ {ys_lmax:.0f}",
+                    "Actual YS": act_ys,
+                    "Theoretical EL (%)": f"{el_lmax:.1f} ~ {el_lmin:.1f}",
+                    "Actual EL (%)": act_el
+                })
+
+            df_summary = pd.DataFrame(rows)
+            
+            def highlight_new_target(s):
+                if "🌟 New Core Target" in s['Limit Type']:
+                    return ['background-color: #d4edda; font-weight: bold; color: #155724'] * len(s)
+                return [''] * len(s)
+
+            st.dataframe(
+                df_summary.style.apply(highlight_new_target, axis=1), 
+                use_container_width=True, 
+                hide_index=True
+            )
+            st.caption("*(**) TS: Tensile Strength (MPa) | YS: Yield Strength (MPa) | EL: Elongation (%)*")
+
+            # EXCEL EXPORT BUTTON
+            import io
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df_summary.to_excel(writer, sheet_name='Summary', index=False)
+                worksheet = writer.sheets['Summary']
+                for idx, col_name in enumerate(df_summary.columns):
+                    max_len = max(df_summary[col_name].astype(str).map(len).max(), len(col_name)) + 2
+                    worksheet.set_column(idx, idx, max_len)
+
+            safe_group_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', group_title)
+            st.download_button(
+                label="📥 Download Summary as Excel",
+                data=buffer.getvalue(),
+                file_name=f"Mech_Estimation_{safe_group_name}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"dl_sum_{i}"
+            )
+
+        # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown("## 📊 Summary of Control Limits")
             df_total = pd.DataFrame(all_groups_summary)
-            styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
-                                      .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)'])
+            
+            def style_status(val):
+                return 'color: red; font-weight: bold' if 'Narrow' in val else 'color: green; font-weight: bold'
+
+            styled_df = (
+                df_total.style
+                .applymap(style_status, subset=['Status'])
+                .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
+            )
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            st.download_button("📥 Export Complete SPC Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_A118T.csv")

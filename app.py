@@ -697,17 +697,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 
                 lcl_3s, ucl_3s = mean - 3 * std, mean + 3 * std
                 
-                axes[j].hist(data, bins=15, color=cfg["color"], alpha=0.5, density=True)
+                # Vẽ Histogram và đường cong
+                axes[j].hist(data, bins=15, color=cfg["color"], alpha=0.5, density=True, label="Actual Data")
                 if std > 0:
                     x_p = np.linspace(data.min() - 3*std, data.max() + 3*std, 200)
-                    axes[j].plot(x_p, (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2), color=cfg["color"], lw=2)
+                    axes[j].plot(x_p, (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2), color=cfg["color"], lw=2, label="Normal Dist")
                 
-                if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2)
-                if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2)
-                axes[j].axvline(lcl_3s, color="blue", linestyle=":", linewidth=1.5)
-                axes[j].axvline(ucl_3s, color="blue", linestyle=":", linewidth=1.5)
+                # --- FIX: BỔ SUNG LABEL CHO CÁC ĐƯỜNG GIỚI HẠN ---
+                if spec_min > 0: 
+                    axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min ({spec_min:.0f})")
+                if spec_max > 0 and spec_max < 9000: 
+                    axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max ({spec_max:.0f})")
+                
+                axes[j].axvline(lcl_3s, color="blue", linestyle=":", linewidth=2, label=f"-3σ LCL ({lcl_3s:.1f})")
+                axes[j].axvline(ucl_3s, color="blue", linestyle=":", linewidth=2, label=f"+3σ UCL ({ucl_3s:.1f})")
                 
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
+                
+                # BẬT HIỂN THỊ CHÚ THÍCH (LEGEND)
+                axes[j].legend(fontsize=9, loc="upper right")
+                # ------------------------------------------------
                 
                 row_data = {
                     "Group": group_title, "N": len(data), "Hardness Range (HRB)": hrb_rng,
@@ -724,6 +733,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if has_data: st.pyplot(fig)
         else: st.warning("⚠️ Không có dữ liệu Cơ tính (TS/YS/EL) cho nhóm này.")
 
+        # --- PHẦN HIỂN THỊ BẢNG VÀ XUẤT EXCEL Ở DƯỚI GIỮ NGUYÊN ---
         if i == len(valid) - 1:
             st.markdown("---")
             st.markdown("## 📊 Mechanical Properties Comprehensive Report")
@@ -741,13 +751,15 @@ for i, (_, g) in enumerate(valid.iterrows()):
             d_sum("3️⃣ Elongation (EL)", el_summary, "#fff5e6")        
 
             if ts_summary or ys_summary or el_summary:
+                import datetime
+                from io import BytesIO
+                today_str = datetime.datetime.now().strftime("%Y%m%d")
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     if ts_summary: pd.DataFrame(ts_summary).to_excel(writer, sheet_name='TS_Summary', index=False)
                     if ys_summary: pd.DataFrame(ys_summary).to_excel(writer, sheet_name='YS_Summary', index=False)
                     if el_summary: pd.DataFrame(el_summary).to_excel(writer, sheet_name='EL_Summary', index=False)
-                st.download_button("📥 Export Full Mech Report (Excel)", data=output.getvalue(), file_name=f"Mech_Report_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
+                st.download_button("📥 Export Full Mech Report (Excel)", data=output.getvalue(), file_name=f"Mech_Report_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         c1, c2 = st.columns(2)
         actual_min = float(sub["Hardness_LINE"].min()) if not sub["Hardness_LINE"].empty else 0.0

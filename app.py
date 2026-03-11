@@ -307,12 +307,12 @@ if view_mode == "📊 Executive KPI Dashboard":
             
             st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             
-            st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions")
-            top_5_risks = risk_top.head(5).to_dict('records')
+            st.markdown("#### 🔔 Visual Deep Dive: Top 10 Risk Distributions")
+            top_10_risks = risk_top.head(10).to_dict('records')
             
-            if len(top_5_risks) > 0:
-                chart_cols = st.columns(min(len(top_5_risks), 3))
-                for idx, item in enumerate(top_5_risks):
+            if len(top_10_risks) > 0:
+                chart_cols = st.columns(min(len(top_10_risks), 3))
+                for idx, item in enumerate(top_10_risks):
                     spec, mat, gauge_val = item.get("Specification", "N/A"), item.get("Material", "N/A"), item.get("Gauge", "N/A")
                     tdf = df_kpi[(df_kpi.get("Product_Spec", "") == spec) & (df_kpi.get("Material", "") == mat) & (df_kpi.get("Order_Gauge", "") == gauge_val)]
                     

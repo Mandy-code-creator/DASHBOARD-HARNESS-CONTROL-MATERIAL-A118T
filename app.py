@@ -333,16 +333,68 @@ for i, (_, g) in enumerate(valid.iterrows()):
         st.dataframe(sub.style.format("{:.0f}", subset=[c for c in num_cols if c not in ['Limit_Min', 'Limit_Max', 'Order_Gauge']]).apply(highlight_ng_rows, axis=1), use_container_width=True)
 
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
-        x = np.arange(1, len(sub)+1)
-        fig, ax = plt.subplots(figsize=(10, 4.5))
-        if "Hardness_LAB" in sub.columns and not sub["Hardness_LAB"].isna().all():
-            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
-        ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
-        ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
-        ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
-        ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
-        plt.tight_layout(); st.pyplot(fig)
+        tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
+        
+        with tab_trend:
+            x = np.arange(1, len(sub)+1)
+            fig, ax = plt.subplots(figsize=(10, 4.5))
+            if "Hardness_LAB" in sub.columns and not sub["Hardness_LAB"].isna().all():
+                ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
+            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
+            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
+            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+            ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
+            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
+            plt.tight_layout(); st.pyplot(fig)
+            
+        with tab_dist:
+            line = sub["Hardness_LINE"].dropna()
+            lab = sub["Hardness_LAB"].dropna() if "Hardness_LAB" in sub.columns else pd.Series(dtype=float)
+            
+            if len(line) < 5: 
+                st.warning("⚠️ Cần ít nhất 5 cuộn thép (N ≥ 5) để phân tích phân phối và SPC.")
+            else:
+                def calc_spc_metrics(data, lsl, usl):
+                    if len(data) < 2: return None
+                    mean = data.mean(); std = data.std(ddof=1)
+                    if std == 0: return None 
+                    cp = (usl - lsl) / (6 * std)
+                    mid = (usl + lsl) / 2; tol = (usl - lsl); ca = ((mean - mid) / (tol / 2)) * 100
+                    cpu = (usl - mean) / (3 * std); cpl = (mean - lsl) / (3 * std)
+                    return mean, std, cp, ca, min(cpu, cpl)
+
+                spc_line = calc_spc_metrics(line, lo, hi)
+                mean_line, std_line = line.mean(), line.std(ddof=1)
+                
+                vals = [line.min(), line.max(), lo, hi]
+                if not lab.empty: vals.extend([lab.min(), lab.max()])
+                x_min = min(vals) - 2; x_max = max(vals) + 2
+                bins = np.linspace(x_min, x_max, 30)
+                
+                fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
+                ax_dist.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
+                if not lab.empty: ax_dist.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
+                
+                if std_line > 0:
+                    xs = np.linspace(x_min, x_max, 400)
+                    ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
+                    ax_dist.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
+                
+                ax_dist.axvline(lo, linestyle="--", linewidth=2, color="red", label="LSL")
+                ax_dist.axvline(hi, linestyle="--", linewidth=2, color="red", label="USL")
+                
+                ax_dist.set_xlim(x_min, x_max)
+                ax_dist.set_title("Hardness Distribution (LINE vs LAB)", weight="bold")
+                ax_dist.legend(); ax_dist.grid(alpha=0.3)
+                st.pyplot(fig_dist)
+
+                st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
+                if spc_line:
+                    mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
+                    eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
+                    color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
+                    df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
+                    st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
 
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
         st.dataframe(sub[["Hardness_LINE", "TS", "YS", "EL"]].corr().style.background_gradient(cmap='coolwarm'), use_container_width=True)

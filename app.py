@@ -207,6 +207,7 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
+# ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
@@ -246,8 +247,141 @@ if view_mode == "📊 Executive KPI Dashboard":
         col4.metric("TS Pass", clean_num(df_kpi['TS_Pass'].mean() * 100, True))
         col5.metric("YS Pass", clean_num(df_kpi['YS_Pass'].mean() * 100, True))
         col6.metric("EL Pass", clean_num(df_kpi['EL_Pass'].mean() * 100, True))
-    st.stop()
+        
+        st.markdown("---")
 
+        # --- 1. HIGH-RISK WATCHLIST ---
+        st.markdown("### ⚠️ High-Risk Specs Watchlist")
+        st.caption("Top list of standard codes with the lowest mechanical pass rates or out-of-control hardness, requiring priority review.")
+        
+        group_cols = ["Product_Spec", "Quality_Group", "Material", "Order_Gauge"]
+        valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
+        
+        risk_summary = df_kpi.groupby(valid_group_cols).agg(
+            Total_Coils=('COIL_NO', 'count'),
+            Mech_Pass_Coils=('All_Pass', 'sum'),
+            HRB_Pass_Coils=('HRB_Pass', 'sum'), 
+            Hardness_Mean=('Hardness_LINE', 'mean'),
+            Hardness_Std=('Hardness_LINE', 'std'),
+            LSL=('Limit_Min', 'first'),
+            USL=('Limit_Max', 'first')
+        ).reset_index()
+        
+        risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
+        risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
+        
+        # Chỉ lọc những nhóm có từ 3 cuộn trở lên để đảm bảo tính thống kê
+        risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
+        
+        if not risk_top.empty:
+            rename_dict = {
+                "Product_Spec": "Specification",
+                "Quality_Group": "Quality",
+                "Material": "Material",
+                "Order_Gauge": "Gauge",
+                "Total_Coils": "Tested Coils",
+                "Hardness_Mean": "Avg Hardness",
+                "Hardness_Std": "Hardness Std Dev"
+            }
+            risk_top = risk_top.rename(columns=rename_dict)
+            
+            cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev"]
+            cols_order = [c for c in cols_order if c in risk_top.columns]
+            risk_top_display = risk_top[cols_order].copy()
+            
+            risk_top_display['Mech Yield (%)'] = risk_top_display['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
+            risk_top_display['HRB Yield (%)'] = risk_top_display['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
+            risk_top_display['Avg Hardness'] = risk_top_display['Avg Hardness'].apply(lambda x: clean_num(x))
+            risk_top_display['Hardness Std Dev'] = risk_top_display['Hardness Std Dev'].apply(lambda x: clean_num(x))
+            
+            def style_risk(val):
+                try:
+                    num = float(str(val).replace('%', '').strip())
+                    if num < 100: return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
+                    if num >= 100: return 'color: #388e3c; font-weight: bold'
+                except: pass
+                return ''
+            
+            def style_std(val):
+                try:
+                    num = float(str(val).strip())
+                    if num > 3.0: return 'color: #f57c00; font-weight: bold'
+                except: pass
+                return ''
+
+            styled_risk = risk_top_display.style
+            if hasattr(styled_risk, "map"):
+                styled_risk = styled_risk.map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)']).map(style_std, subset=['Hardness Std Dev'])
+            else:
+                styled_risk = styled_risk.applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)']).applymap(style_std, subset=['Hardness Std Dev'])
+            
+            st.dataframe(styled_risk, use_container_width=True, hide_index=True)
+            
+            # --- 2. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 5 ---
+            st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions")
+            st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications to expose control limit breaches.")
+            
+            top_5_risks = risk_top.head(5).to_dict('records')
+            
+            if len(top_5_risks) > 0:
+                chart_cols = st.columns(min(len(top_5_risks), 3)) # Tối đa 3 biểu đồ 1 hàng
+                
+                for idx, risk_item in enumerate(top_5_risks):
+                    spec_name = risk_item.get("Specification", "N/A")
+                    mat_name = risk_item.get("Material", "N/A")
+                    gauge_val = risk_item.get("Gauge", 0)
+                    
+                    target_data = df_kpi[
+                        (df_kpi["Product_Spec"] == spec_name) & 
+                        (df_kpi["Material"] == mat_name) & 
+                        (df_kpi["Order_Gauge"] == gauge_val)
+                    ]
+                    
+                    if not target_data.empty:
+                        fig, ax = plt.subplots(figsize=(6, 4))
+                        hard_data = target_data["Hardness_LINE"].dropna()
+                        ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.8)
+                        
+                        mean_val = hard_data.mean()
+                        std_val = hard_data.std()
+                        if std_val > 0:
+                            x_axis = np.linspace(hard_data.min() - 2, hard_data.max() + 2, 100)
+                            y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
+                            ax.plot(x_axis, y_axis, color="#cc0000", lw=2, label="Distribution Fit")
+                        
+                        l_min = target_data["Limit_Min"].iloc[0]
+                        l_max = target_data["Limit_Max"].iloc[0]
+                        
+                        ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"LSL ({l_min:.0f})")
+                        if l_max > 0 and l_max < 9000:
+                            ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"USL ({l_max:.0f})")
+                        
+                        ax.set_title(f"TOP {idx+1}: {spec_name}\nMat: {mat_name} | Gauge: {gauge_val} | N={len(hard_data)}", fontsize=10, fontweight="bold")
+                        ax.set_xlabel("Hardness (HRB)", fontsize=9)
+                        ax.legend(fontsize=8, loc="upper right")
+                        ax.grid(alpha=0.3, linestyle=":")
+                        chart_cols[idx % 3].pyplot(fig)
+            
+            # --- 3. REPORT EXPORT ---
+            st.markdown("---")
+            st.markdown("#### 📑 Export Actionable Report")
+            import streamlit.components.v1 as components
+            col_csv, col_pdf, _ = st.columns([2, 2, 6])
+            
+            with col_csv:
+                csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(label="📥 Download Watchlist (CSV)", data=csv_data, file_name="High_Risk_Watchlist.csv", mime="text/csv", use_container_width=True)
+                
+            with col_pdf:
+                if st.button("🖨️ Save as PDF Report", use_container_width=True):
+                    components.html("<script>window.parent.print();</script>", height=0)
+            
+            # CSS để ẩn Sidebar khi in PDF
+            st.markdown("""<style>@media print {[data-testid="stSidebar"] { display: none !important; } header { display: none !important; } .stButton, .stDownloadButton { display: none !important; } @page { size: A4 landscape; margin: 10mm; } .stApp { background-color: white !important; }}</style>""", unsafe_allow_html=True)
+
+        else:
+            st.success("🎉 Excellent! Tất cả các dòng sản phẩm đều đạt chuẩn (hoặc số lượng mẫu thử < 3).")
+    st.stop()
 # ==============================================================================
 # 🚀 GLOBAL SUMMARY DASHBOARD
 # ==============================================================================

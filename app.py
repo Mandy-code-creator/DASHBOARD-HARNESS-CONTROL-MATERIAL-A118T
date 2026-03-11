@@ -953,7 +953,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.pyplot(fig)
 
             # ==================================================================
-            # BIỂU ĐỒ 2: CHI TIẾT M1 VS M4 VS SPECS
+            # ==================================================================
+            # BIỂU ĐỒ 2: CHI TIẾT M1 VS M4 VS SPECS (CÓ CẢ LINE VÀ LAB)
             # ==================================================================
             st.write("---") 
             st.markdown(f"#### 📊 Detailed Distribution Analysis")
@@ -963,10 +964,21 @@ for i, (_, g) in enumerate(valid.iterrows()):
             bins_sturges = int(round(1 + 3.322 * np.log10(n_samples))) if n_samples > 0 else 10
             
             fig2, ax2 = plt.subplots(figsize=(12, 6))
-            ax2.hist(data, bins=bins_sturges, density=True, alpha=0.2, color="#1f77b4", label="LINE Actual")
             
-            x_min_val = min([m1_min, m4_min, spec_min, data.min()]) - 5
-            x_max_val = max([m1_max, m4_max, display_max, data.max()]) + 5
+            # Vẽ cả Histogram của LINE và LAB
+            ax2.hist(data, bins=bins_sturges, density=True, alpha=0.3, color="#1f77b4", label="LINE Actual")
+            if not data_lab.empty:
+                ax2.hist(data_lab, bins=bins_sturges, density=True, alpha=0.3, color="#ff7f0e", label="LAB Actual")
+            
+            # Căn chỉnh lại trục X để bao quát toàn bộ cả LAB và LINE
+            min_candidates = [m1_min, m4_min, spec_min, data.min()]
+            max_candidates = [m1_max, m4_max, display_max, data.max()]
+            if not data_lab.empty:
+                min_candidates.append(data_lab.min())
+                max_candidates.append(data_lab.max())
+                
+            x_min_val = min(min_candidates) - 5
+            x_max_val = max(max_candidates) + 5
             x_axis = np.linspace(x_min_val, x_max_val, 500)
             
             ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Curve (σ={std_dev:.2f})")
@@ -984,7 +996,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax2.set_title(f"Detailed Analysis (Sturges k={bins_sturges})", fontsize=11, fontweight="bold")
             ax2.legend(loc="upper right", fontsize="small")
             st.pyplot(fig2)
-
             # ==================================================================
             # 3. SUMMARY TABLE & EXCEL EXPORT (DỰ PHÓNG CƠ TÍNH)
             # ==================================================================

@@ -631,19 +631,126 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
 
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
-        st.dataframe(sub[["Hardness_LINE", "TS", "YS", "EL"]].corr().style.background_gradient(cmap='coolwarm'), use_container_width=True)
+        
+        # 1. Khởi tạo danh sách ở vòng lặp đầu tiên
+        if i == 0:
+            corr_bin_summary = []
 
-    elif view_mode == "⚙️ Mech Props Analysis":
-        sub_mech = sub.dropna(subset=["TS","YS","EL"])
-        if sub_mech.empty: st.warning("No Mech Data")
-        else:
-            fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-            for j, col in enumerate(["TS", "YS", "EL"]):
-                data = sub_mech[col]
-                axes[j].hist(data, bins=20, alpha=0.7, color=['#1f77b4', '#2ca02c', '#ff7f0e'][j])
-                axes[j].set_title(f"{col} Distribution\n(Mean: {data.mean():.1f})")
-                axes[j].grid(alpha=0.3)
-            st.pyplot(fig)
+        # Lọc bỏ các dòng thiếu dữ liệu
+        sub_corr = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
+        
+        # 2. Chia khoảng (Binning) độ cứng
+        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
+        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
+        sub_corr["HRB_bin"] = pd.cut(sub_corr["Hardness_LINE"], bins=bins, labels=labels, right=False)
+        
+        # 3. Tính toán thống kê theo từng khoảng
+        summary = (sub_corr.groupby("HRB_bin", observed=True).agg(
+            N_coils=("COIL_NO","count"),
+            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
+            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
+            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max"),
+            Std_TS_min=("Standard TS min", "max"), Std_TS_max=("Standard TS max", "max"),
+            Std_YS_min=("Standard YS min", "max"), Std_YS_max=("Standard YS max", "max"),
+            Std_EL_min=("Standard EL min", "max"), Std_EL_max=("Standard EL max", "max"),
+        ).reset_index())
+        summary = summary[summary["N_coils"]>0]
+
+        if not summary.empty:
+            # --- VẼ BIỂU ĐỒ NHƯ APP MẪU ---
+            x = np.arange(len(summary))
+            fig, ax = plt.subplots(figsize=(15,6))
+            
+            def plot_prop(x, y, ymin, ymax, c, lbl, m):
+                ax.plot(x, y, marker=m, color=c, label=lbl, lw=2)
+                ax.fill_between(x, ymin, ymax, color=c, alpha=0.1)
+            
+            plot_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS", "o")
+            plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
+            plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
+
+            for j, row in enumerate(summary.itertuples()):
+                ax.annotate(f"{row.TS_mean:.0f}", (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
+                ax.annotate(f"{row.YS_mean:.0f}", (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
+                
+                el_spec = row.Std_EL_min if pd.notna(row.Std_EL_min) else 0
+                is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
+                lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
+                clr = "red" if is_fail else "#ff7f0e"
+                ax.annotate(lbl, (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
+
+            ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
+            ax.set_title("Hardness vs Mechanical Properties", fontweight="bold"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)
+
+            # --- THU THẬP DỮ LIỆU ĐỂ TỔNG HỢP ---
+            specs_str = f"Specs: {', '.join(str(x) for x in sub['Product_Spec'].dropna().unique())}" if 'Product_Spec' in sub.columns else "Specs: N/A"
+
+            for row in summary.itertuples():
+                bin_data = sub_corr[sub_corr["HRB_bin"] == row.HRB_bin]
+                corr_bin_summary.append({
+                    "Specification List": specs_str,
+                    "Material": g.get("Material", "N/A"),
+                    "Gauge": g.get("Order_Gauge", "N/A"),
+                    "Hardness Bin": row.HRB_bin,
+                    "N": row.N_coils,
+                    "TS Spec": f"{row.Std_TS_min:.0f}~{row.Std_TS_max:.0f}" if pd.notna(row.Std_TS_max) and row.Std_TS_max < 9000 else (f"≥{row.Std_TS_min:.0f}" if pd.notna(row.Std_TS_min) else "-"),
+                    "TS Actual": f"{row.TS_min:.0f}~{row.TS_max:.0f}",
+                    "TS Mean": f"{row.TS_mean:.1f}",
+                    "TS Std": f"{bin_data['TS'].std():.1f}",
+                    "YS Spec": f"{row.Std_YS_min:.0f}~{row.Std_YS_max:.0f}" if pd.notna(row.Std_YS_max) and row.Std_YS_max < 9000 else (f"≥{row.Std_YS_min:.0f}" if pd.notna(row.Std_YS_min) else "-"),
+                    "YS Actual": f"{row.YS_min:.0f}~{row.YS_max:.0f}",
+                    "YS Mean": f"{row.YS_mean:.1f}",
+                    "YS Std": f"{bin_data['YS'].std():.1f}",
+                    "EL Spec": f"≥{row.Std_EL_min:.0f}" if pd.notna(row.Std_EL_min) else "-",
+                    "EL Actual": f"{row.EL_min:.1f}~{row.EL_max:.1f}",
+                    "EL Mean": f"{row.EL_mean:.1f}",
+                    "EL Std": f"{bin_data['EL'].std():.1f}"
+                })
+
+        # --- XUẤT REPORT Ở LẦN LẶP CUỐI CÙNG ---
+        if i == len(valid) - 1 and 'corr_bin_summary' in locals() and len(corr_bin_summary) > 0:
+            st.markdown("---")
+            st.markdown(f"## 📊 Hardness Binning Comprehensive Report")
+            
+            df_full = pd.DataFrame(corr_bin_summary)
+            
+            def display_bin_table(title, cols, color_code):
+                st.markdown(f"#### {title}")
+                base_cols = ["Specification List", "Material", "Gauge", "Hardness Bin", "N"]
+                target_df = df_full[base_cols + cols]
+                std_col = [c for c in target_df.columns if "Std" in c]
+                styled = target_df.style.set_properties(**{'background-color': color_code, 'font-weight': 'bold'}, subset=std_col)
+                st.dataframe(styled, use_container_width=True, hide_index=True)
+
+            display_bin_table("📉 TS Analysis by Hardness Bin", ["TS Spec", "TS Actual", "TS Mean", "TS Std"], "#e6f2ff")
+            display_bin_table("📉 YS Analysis by Hardness Bin", ["YS Spec", "YS Actual", "YS Mean", "YS Std"], "#f2fff2")
+            display_bin_table("📉 EL Analysis by Hardness Bin", ["EL Spec", "EL Actual", "EL Mean", "EL Std"], "#fff5e6")
+            
+            import datetime
+            from io import BytesIO
+            
+            excel_name = f"Hardness_Bin_Report_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_full.to_excel(writer, sheet_name='All_Data', index=False)
+                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "TS Spec", "TS Actual", "TS Mean", "TS Std"]].to_excel(writer, sheet_name='TS_Only', index=False)
+                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "YS Spec", "YS Actual", "YS Mean", "YS Std"]].to_excel(writer, sheet_name='YS_Only', index=False)
+                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "EL Spec", "EL Actual", "EL Mean", "EL Std"]].to_excel(writer, sheet_name='EL_Only', index=False)
+                
+                # Tự động căn chỉnh độ rộng cột Excel
+                workbook = writer.book
+                for sheet_name in writer.sheets:
+                    worksheet = writer.sheets[sheet_name]
+                    worksheet.set_column('A:A', 25) 
+                    worksheet.set_column('B:C', 15) 
+                    worksheet.set_column('D:Z', 12) 
+            
+            st.download_button(
+                label="📥 Export Binning Report (Excel)",
+                data=output.getvalue(),
+                file_name=excel_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         c1, c2 = st.columns(2)

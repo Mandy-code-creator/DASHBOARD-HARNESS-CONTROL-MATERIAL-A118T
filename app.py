@@ -395,8 +395,8 @@ if view_mode == "🚀 Global Summary Dashboard":
 
     with tab2:
         col_in1, col_in2 = st.columns([1, 1])
-        with col_in1: user_hrb = st.number_input("1️⃣ Target HRB", value=85.0, step=0.5, format="%.1f")
-        with col_in2: safety_k = st.selectbox("2️⃣ Select Safety Factor:", [1.0, 2.0, 3.0], index=1)
+        with col_in1: user_hrb = st.number_input("1️⃣ Target HRB (Simulated)", value=85.0, step=0.5, format="%.1f")
+        with col_in2: safety_k = st.selectbox("2️⃣ Select Safety Factor (σ):", [1.0, 2.0, 3.0], index=1)
 
         rows_ts, rows_ys, rows_el = [], [], []
         for _, g in valid.iterrows():
@@ -405,40 +405,91 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 3: continue 
 
+            # Lấy Spec Độ cứng
+            l_min_val = sub_grp['Limit_Min'].min() if 'Limit_Min' in sub_grp.columns else 0
+            l_max_val = sub_grp['Limit_Max'].max() if 'Limit_Max' in sub_grp.columns else 0
+            hrb_spec_str = f"{l_min_val:.0f}~{l_max_val:.0f}" if l_max_val > 0 else "-"
+
             X = sub_grp[["Hardness_LINE"]].values
-            def g_risk(col, sp_min):
+            
+            # Hàm dự phóng và quét giới hạn 2 chiều (Min/Max)
+            def eval_risk(col, sp_min, sp_max, is_el=False):
                 m = LinearRegression().fit(X, sub_grp[col].values)
                 pred = m.predict([[user_hrb]])[0]
-                safe = pred - (safety_k * np.sqrt(mean_squared_error(sub_grp[col], m.predict(X))))
-                return pred, safe, "🔴 High Risk" if (sp_min > 0 and safe < sp_min) else "🟢 Safe"
+                rmse = np.sqrt(mean_squared_error(sub_grp[col], m.predict(X)))
+                worst = pred - (safety_k * rmse) # Biên độ dưới
+                best = pred + (safety_k * rmse)  # Biên độ trên
+                
+                sp_min = sp_min if pd.notna(sp_min) else 0
+                sp_max = sp_max if pd.notna(sp_max) else 0
+                
+                # Quét cảnh báo rủi ro
+                status = "🟢 Safe"
+                if sp_min > 0 and worst < sp_min: status = "🔴 Risk (Low)"
+                if not is_el and 0 < sp_max < 9000 and best > sp_max: status = "🔴 Risk (High)"
+                
+                # Hiển thị chuỗi Spec Cơ tính
+                if is_el:
+                    lim_str = f"≥ {sp_min:.1f}" if sp_min > 0 else "-"
+                else:
+                    if sp_min > 0 and 0 < sp_max < 9000: lim_str = f"{sp_min:.0f}~{sp_max:.0f}"
+                    elif sp_min > 0: lim_str = f"≥ {sp_min:.0f}"
+                    elif 0 < sp_max < 9000: lim_str = f"≤ {sp_max:.0f}"
+                    else: lim_str = "-"
+                    
+                return pred, worst, best, lim_str, status
 
             try:
-                # --- FIX: CHỈ LẤY SPEC VÀ GAUGE, ẨN CÁC CỘT THỪA ---
+                # Ẩn các cột không cần thiết, thêm HRB Spec
                 b_dict = {}
                 for col in GROUP_COLS:
                     if col not in ["Rolling_Type", "Metallic_Type", "Material", "Quality_Group"]:
                         b_dict[col] = g[col]
-                # ---------------------------------------------------
+                b_dict["HRB Spec"] = hrb_spec_str
                 
-                ts_m = sub_grp["Standard TS min"].max() if "Standard TS min" in sub_grp else 0
-                p_ts, s_ts, r_ts = g_risk("TS", ts_m)
-                dt = b_dict.copy(); dt.update({"Pred TS": f"{p_ts:.0f}", "Worst Case": f"{s_ts:.0f}", "Limit": f"≥ {ts_m:.0f}" if ts_m > 0 else "-", "Status": r_ts}); rows_ts.append(dt)
+                # Tính toán TS
+                ts_m_min = sub_grp["Standard TS min"].max() if "Standard TS min" in sub_grp else 0
+                ts_m_max = sub_grp["Standard TS max"].min() if "Standard TS max" in sub_grp else 0
+                p_ts, w_ts, b_ts, l_ts, st_ts = eval_risk("TS", ts_m_min, ts_m_max)
+                dt = b_dict.copy()
+                dt.update({"Pred TS": f"{p_ts:.0f}", "Est. Range": f"{w_ts:.0f}~{b_ts:.0f}", "Mech Spec": l_ts, "Status": st_ts})
+                rows_ts.append(dt)
                 
-                ys_m = sub_grp["Standard YS min"].max() if "Standard YS min" in sub_grp else 0
-                p_ys, s_ys, r_ys = g_risk("YS", ys_m)
-                dy = b_dict.copy(); dy.update({"Pred YS": f"{p_ys:.0f}", "Worst Case": f"{s_ys:.0f}", "Limit": f"≥ {ys_m:.0f}" if ys_m > 0 else "-", "Status": r_ys}); rows_ys.append(dy)
+                # Tính toán YS
+                ys_m_min = sub_grp["Standard YS min"].max() if "Standard YS min" in sub_grp else 0
+                ys_m_max = sub_grp["Standard YS max"].min() if "Standard YS max" in sub_grp else 0
+                p_ys, w_ys, b_ys, l_ys, st_ys = eval_risk("YS", ys_m_min, ys_m_max)
+                dy = b_dict.copy()
+                dy.update({"Pred YS": f"{p_ys:.0f}", "Est. Range": f"{w_ys:.0f}~{b_ys:.0f}", "Mech Spec": l_ys, "Status": st_ys})
+                rows_ys.append(dy)
 
-                el_m = sub_grp["Standard EL min"].max() if "Standard EL min" in sub_grp else 0
-                p_el, s_el, r_el = g_risk("EL", el_m)
-                de = b_dict.copy(); de.update({"Pred EL": f"{p_el:.1f}", "Worst Case": f"{s_el:.1f}", "Limit": f"≥ {el_m:.1f}" if el_m > 0 else "-", "Status": r_el}); rows_el.append(de)
+                # Tính toán EL
+                el_m_min = sub_grp["Standard EL min"].max() if "Standard EL min" in sub_grp else 0
+                p_el, w_el, b_el, l_el, st_el = eval_risk("EL", el_m_min, 0, is_el=True)
+                de = b_dict.copy()
+                de.update({"Pred EL": f"{p_el:.1f}", "Est. Range": f"{w_el:.1f}~{b_el:.1f}", "Mech Spec": l_el, "Status": st_el})
+                rows_el.append(de)
             except: pass
 
         if rows_ts:
-            def sr(val): return 'color: red; font-weight: bold' if "🔴" in val else 'color: green; font-weight: bold'
+            def sr(val): 
+                if isinstance(val, str):
+                    if "🔴" in val: return 'color: #721c24; font-weight: bold; background-color: #f8d7da'
+                    if "🟢" in val: return 'color: #155724; font-weight: bold; background-color: #d4edda'
+                return ''
+            
+            st.info("💡 **Ghi chú:** Cột **HRB Spec** là tiêu chuẩn độ cứng ban đầu của mã hàng (giúp đối chiếu Target HRB). Cột **Est. Range** (Biên độ dự phóng) sẽ tự động so sánh với **Mech Spec** (Giới hạn cơ tính) để cảnh báo Rủi ro theo hai chiều (Low/High).")
+            
             c_top1, c_top2 = st.columns(2)
-            with c_top1: st.markdown("##### 🔹 Tensile Strength (TS)"); st.dataframe(pd.DataFrame(rows_ts).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
-            with c_top2: st.markdown("##### 🔸 Yield Strength (YS)"); st.dataframe(pd.DataFrame(rows_ys).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
-            st.markdown("##### 🔻 Elongation (EL)"); st.dataframe(pd.DataFrame(rows_el).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
+            with c_top1: 
+                st.markdown("##### 🔹 Tensile Strength (TS)")
+                st.dataframe(pd.DataFrame(rows_ts).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
+            with c_top2: 
+                st.markdown("##### 🔸 Yield Strength (YS)")
+                st.dataframe(pd.DataFrame(rows_ys).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
+            
+            st.markdown("##### 🔻 Elongation (EL)")
+            st.dataframe(pd.DataFrame(rows_el).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
     st.stop()
 
 # ==============================================================================

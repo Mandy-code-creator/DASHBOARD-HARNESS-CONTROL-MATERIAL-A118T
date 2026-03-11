@@ -617,13 +617,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
             p_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
 
             for j, row in enumerate(summary.itertuples()):
-                # Quét giới hạn cơ tính để cảnh báo ĐỎ
                 ts_min, ts_max = row.Std_TS_min, row.Std_TS_max
                 ys_min, ys_max = row.Std_YS_min, row.Std_YS_max
                 el_spec = row.Std_EL_min if pd.notna(row.Std_EL_min) else 0
                 
-                ts_fail = (pd.notna(ts_min) and ts_min > 0 and row.TS_mean < ts_min) or (pd.notna(ts_max) and ts_max > 0 and ts_max < 9000 and row.TS_mean > ts_max)
-                ys_fail = (pd.notna(ys_min) and ys_min > 0 and row.YS_mean < ys_min) or (pd.notna(ys_max) and ys_max > 0 and ys_max < 9000 and row.YS_mean > ys_max)
+                ts_fail = (pd.notna(ts_min) and ts_min > 0 and row.TS_mean < ts_min) or (pd.notna(ts_max) and 0 < ts_max < 9000 and row.TS_mean > ts_max)
+                ys_fail = (pd.notna(ys_min) and ys_min > 0 and row.YS_mean < ys_min) or (pd.notna(ys_max) and 0 < ys_max < 9000 and row.YS_mean > ys_max)
                 el_fail = (el_spec > 0) and (row.EL_mean < el_spec)
                 
                 ax.annotate(f"{row.TS_mean:.0f}" + (" ❌" if ts_fail else ""), (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ts_fail else "#1f77b4")
@@ -635,17 +634,30 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             specs_str = f"Specs: {', '.join(str(x) for x in sub['Product_Spec'].dropna().unique())}" if 'Product_Spec' in sub.columns else "Specs: N/A"
 
+            # --- THUẬT TOÁN ĐÁNH GIÁ NGAY TRONG BẢNG TỔNG HỢP ---
+            def check_limit(act_min, act_max, sp_min, sp_max, is_el=False):
+                fail = False
+                if pd.notna(sp_min) and sp_min > 0 and act_min < sp_min: fail = True
+                if not is_el and pd.notna(sp_max) and 0 < sp_max < 9000 and act_max > sp_max: fail = True
+                res = f"{act_min:.1f}~{act_max:.1f}" if is_el else f"{act_min:.0f}~{act_max:.0f}"
+                return res + (" ❌" if fail else " ✅")
+
             for row in summary.itertuples():
                 bin_data = sub_corr[sub_corr["HRB_bin"] == row.HRB_bin]
+                
+                ts_act_str = check_limit(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)
+                ys_act_str = check_limit(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)
+                el_act_str = check_limit(row.EL_min, row.EL_max, row.Std_EL_min, 0, is_el=True)
+
                 corr_bin_summary.append({
                     "Specification List": specs_str, "Material": g.get("Material", "N/A"), "Gauge": g.get("Order_Gauge", "N/A"),
                     "Hardness Bin": row.HRB_bin, "N": row.N_coils,
                     "TS Spec": f"{row.Std_TS_min:.0f}~{row.Std_TS_max:.0f}" if pd.notna(row.Std_TS_max) and row.Std_TS_max < 9000 else (f"≥{row.Std_TS_min:.0f}" if pd.notna(row.Std_TS_min) else "-"),
-                    "TS Actual": f"{row.TS_min:.0f}~{row.TS_max:.0f}", "TS Mean": f"{row.TS_mean:.1f}", "TS Std": f"{bin_data['TS'].std():.1f}",
+                    "TS Actual": ts_act_str, "TS Mean": f"{row.TS_mean:.1f}", "TS Std": f"{bin_data['TS'].std():.1f}",
                     "YS Spec": f"{row.Std_YS_min:.0f}~{row.Std_YS_max:.0f}" if pd.notna(row.Std_YS_max) and row.Std_YS_max < 9000 else (f"≥{row.Std_YS_min:.0f}" if pd.notna(row.Std_YS_min) else "-"),
-                    "YS Actual": f"{row.YS_min:.0f}~{row.YS_max:.0f}", "YS Mean": f"{row.YS_mean:.1f}", "YS Std": f"{bin_data['YS'].std():.1f}",
+                    "YS Actual": ys_act_str, "YS Mean": f"{row.YS_mean:.1f}", "YS Std": f"{bin_data['YS'].std():.1f}",
                     "EL Spec": f"≥{row.Std_EL_min:.0f}" if pd.notna(row.Std_EL_min) else "-",
-                    "EL Actual": f"{row.EL_min:.1f}~{row.EL_max:.1f}", "EL Mean": f"{row.EL_mean:.1f}", "EL Std": f"{bin_data['EL'].std():.1f}"
+                    "EL Actual": el_act_str, "EL Mean": f"{row.EL_mean:.1f}", "EL Std": f"{bin_data['EL'].std():.1f}"
                 })
 
         if i == len(valid) - 1 and 'corr_bin_summary' in locals() and len(corr_bin_summary) > 0:
@@ -655,7 +667,21 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             def d_bin(title, cols, c_code):
                 st.markdown(f"#### {title}")
-                styled = df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N"] + cols].style.set_properties(**{'background-color': c_code, 'font-weight': 'bold'}, subset=[c for c in cols if "Std" in c])
+                target_df = df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N"] + cols]
+                
+                # Hàm tô màu đỏ/xanh cho ô dựa vào icon
+                def hl_status(val):
+                    if isinstance(val, str):
+                        if '❌' in val: return 'color: #721c24; font-weight: bold; background-color: #f8d7da'
+                        if '✅' in val: return 'color: #155724; font-weight: bold'
+                    return ''
+                
+                styled = target_df.style.set_properties(**{'background-color': c_code, 'font-weight': 'bold'}, subset=[c for c in cols if "Std" in c])
+                if hasattr(styled, "map"):
+                    styled = styled.map(hl_status, subset=[c for c in cols if "Actual" in c])
+                else:
+                    styled = styled.applymap(hl_status, subset=[c for c in cols if "Actual" in c])
+                    
                 st.dataframe(styled, use_container_width=True, hide_index=True)
 
             d_bin("📉 TS Analysis by Hardness Bin", ["TS Spec", "TS Actual", "TS Mean", "TS Std"], "#e6f2ff")
@@ -672,100 +698,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     writer.sheets[s].set_column('A:A', 25); writer.sheets[s].set_column('B:C', 15); writer.sheets[s].set_column('D:Z', 12) 
             
             st.download_button("📥 Export Binning Report (Excel)", data=output.getvalue(), file_name=f"Hardness_Bin_Report_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    elif view_mode == "⚙️ Mech Props Analysis":
-        if i == 0: ts_summary, ys_summary, el_summary = [], [], []
-
-        props_config = [
-            {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
-            {"col": "YS", "name": "Yield Strength (YS)", "color": "#2ca02c", "min_c": "Standard YS min", "max_c": "Standard YS max"},
-            {"col": "EL", "name": "Elongation (EL)", "color": "#ff7f0e", "min_c": "Standard EL min", "max_c": "Standard EL max"}
-        ]
-        
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-        has_data = False
-        
-        h_data = sub["Hardness_LINE"].dropna()
-        hrb_rng = f"{h_data.min():.1f} ~ {h_data.max():.1f}" if not h_data.empty else "N/A"
-        
-        for j, cfg in enumerate(props_config):
-            col = cfg["col"]
-            data = sub[col].dropna()
-            
-            if not data.empty:
-                has_data = True
-                mean, std = data.mean(), data.std() if len(data) > 1 else 0
-                
-                spec_min = sub[cfg["min_c"]].max() if cfg["min_c"] in sub.columns else 0
-                spec_max = sub[cfg["max_c"]].min() if cfg["max_c"] in sub.columns else 0
-                if pd.isna(spec_min): spec_min = 0
-                if pd.isna(spec_max): spec_max = 0
-                
-                lcl_3s, ucl_3s = mean - 3 * std, mean + 3 * std
-                
-                # Vẽ Histogram và đường cong
-                axes[j].hist(data, bins=15, color=cfg["color"], alpha=0.5, density=True, label="Actual Data")
-                if std > 0:
-                    x_p = np.linspace(data.min() - 3*std, data.max() + 3*std, 200)
-                    axes[j].plot(x_p, (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2), color=cfg["color"], lw=2, label="Normal Dist")
-                
-                # --- FIX: BỔ SUNG LABEL CHO CÁC ĐƯỜNG GIỚI HẠN ---
-                if spec_min > 0: 
-                    axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min ({spec_min:.0f})")
-                if spec_max > 0 and spec_max < 9000: 
-                    axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max ({spec_max:.0f})")
-                
-                axes[j].axvline(lcl_3s, color="blue", linestyle=":", linewidth=2, label=f"-3σ LCL ({lcl_3s:.1f})")
-                axes[j].axvline(ucl_3s, color="blue", linestyle=":", linewidth=2, label=f"+3σ UCL ({ucl_3s:.1f})")
-                
-                axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
-                
-                # BẬT HIỂN THỊ CHÚ THÍCH (LEGEND)
-                axes[j].legend(fontsize=9, loc="upper right")
-                # ------------------------------------------------
-                
-                row_data = {
-                    "Group": group_title, "N": len(data), "Hardness Range (HRB)": hrb_rng,
-                    "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
-                    "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
-                    "Mean": f"{mean:.1f}", "Std Dev": f"{std:.1f}", "LCL (-3σ)": f"{lcl_3s:.1f}", "UCL (+3σ)": f"{ucl_3s:.1f}"  
-                }
-                if col == "TS": ts_summary.append(row_data)
-                elif col == "YS": ys_summary.append(row_data)
-                elif col == "EL": el_summary.append(row_data)
-            else: axes[j].set_title(f"{cfg['name']}\n(No Data)")
-            axes[j].grid(alpha=0.3, linestyle="--")
-
-        if has_data: st.pyplot(fig)
-        else: st.warning("⚠️ Không có dữ liệu Cơ tính (TS/YS/EL) cho nhóm này.")
-
-        # --- PHẦN HIỂN THỊ BẢNG VÀ XUẤT EXCEL Ở DƯỚI GIỮ NGUYÊN ---
-        if i == len(valid) - 1:
-            st.markdown("---")
-            st.markdown("## 📊 Mechanical Properties Comprehensive Report")
-            
-            def d_sum(title, data_list, c_code):
-                if data_list:
-                    st.markdown(f"#### {title}")
-                    styled_df = pd.DataFrame(data_list).style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
-                                        .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Hardness Range (HRB)']) \
-                                        .set_properties(**{'background-color': c_code, 'color': '#004085'}, subset=['LCL (-3σ)', 'UCL (+3σ)'])
-                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
-            d_sum("1️⃣ Tensile Strength (TS)", ts_summary, "#e6f2ff") 
-            d_sum("2️⃣ Yield Strength (YS)", ys_summary, "#f2fff2")   
-            d_sum("3️⃣ Elongation (EL)", el_summary, "#fff5e6")        
-
-            if ts_summary or ys_summary or el_summary:
-                import datetime
-                from io import BytesIO
-                today_str = datetime.datetime.now().strftime("%Y%m%d")
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    if ts_summary: pd.DataFrame(ts_summary).to_excel(writer, sheet_name='TS_Summary', index=False)
-                    if ys_summary: pd.DataFrame(ys_summary).to_excel(writer, sheet_name='YS_Summary', index=False)
-                    if el_summary: pd.DataFrame(el_summary).to_excel(writer, sheet_name='EL_Summary', index=False)
-                st.download_button("📥 Export Full Mech Report (Excel)", data=output.getvalue(), file_name=f"Mech_Report_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         c1, c2 = st.columns(2)
         actual_min = float(sub["Hardness_LINE"].min()) if not sub["Hardness_LINE"].empty else 0.0
@@ -862,19 +794,40 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             st.plotly_chart(fig, use_container_width=True)
             
-            st.markdown("##### 🏁 Forecast Summary & Confidence Score")
+            # --- TÍCH HỢP QUÉT KIỂM TRA SPEC ---
+            st.markdown("##### 🏁 Forecast Summary & Spec Evaluation")
             c1, c2, c3 = st.columns(3)
             def get_delta(p, l): return round(p - l, 1)
             last_ts = train_df["TS"].iloc[-1]; last_ys = train_df["YS"].iloc[-1]; last_el = train_df["EL"].iloc[-1]
 
-            c1.metric("Tensile Strength (TS)", f"{int(round(preds['TS']))} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last")
-            c1.caption(f"🎯 **R² Score:** {model_metrics['TS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['TS']['rmse']:.1f}")
+            ts_m_min = sub["Standard TS min"].max() if "Standard TS min" in sub.columns else 0
+            ts_m_max = sub["Standard TS max"].min() if "Standard TS max" in sub.columns else 0
+            ys_m_min = sub["Standard YS min"].max() if "Standard YS min" in sub.columns else 0
+            ys_m_max = sub["Standard YS max"].min() if "Standard YS max" in sub.columns else 0
+            el_m_min = sub["Standard EL min"].max() if "Standard EL min" in sub.columns else 0
+            
+            def check_sp(val, s_min, s_max, is_el=False):
+                s_min = s_min if pd.notna(s_min) else 0
+                s_max = s_max if pd.notna(s_max) else 0
+                lim_str = f"{s_min:.0f}~{s_max:.0f}" if (0 < s_max < 9000) else (f"≥ {s_min:.0f}" if s_min > 0 else "-")
+                if is_el: lim_str = f"≥ {s_min:.1f}" if s_min > 0 else "-"
+                
+                if s_min > 0 and val < s_min: return "❌ FAIL", lim_str
+                if not is_el and 0 < s_max < 9000 and val > s_max: return "❌ FAIL", lim_str
+                return "✅ PASS", lim_str
 
-            c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
-            c2.caption(f"🎯 **R² Score:** {model_metrics['YS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['YS']['rmse']:.1f}")
+            ts_stat, ts_spec = check_sp(preds['TS'], ts_m_min, ts_m_max)
+            ys_stat, ys_spec = check_sp(preds['YS'], ys_m_min, ys_m_max)
+            el_stat, el_spec = check_sp(preds['EL'], el_m_min, 0, is_el=True)
 
-            c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
-            c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['EL']['rmse']:.1f}")
+            c1.metric(f"Tensile (TS) - {ts_stat}", f"{int(round(preds['TS']))} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last")
+            c1.caption(f"**Spec:** {ts_spec} | **R²:** {model_metrics['TS']['r2']:.2f}")
+
+            c2.metric(f"Yield (YS) - {ys_stat}", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
+            c2.caption(f"**Spec:** {ys_spec} | **R²:** {model_metrics['YS']['r2']:.2f}")
+
+            c3.metric(f"Elongation (EL) - {el_stat}", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
+            c3.caption(f"**Spec:** {el_spec} | **R²:** {model_metrics['EL']['r2']:.2f}")
 
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         

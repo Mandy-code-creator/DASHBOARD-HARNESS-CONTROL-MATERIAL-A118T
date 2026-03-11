@@ -146,8 +146,8 @@ df["Lab_Min"] = df["Limit_Min"]
 df["Lab_Max"] = df["Limit_Max"]
 df["Rule_Name"] = "Direct Spec"
 
-# Chuyển 0 thành NA và ép kiểu số
-test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge", 
+# Chuyển 0 thành NA và ép kiểu số cho các cột đo lường
+test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", 
              "Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", 
              "Standard EL min", "Standard EL max"]
 
@@ -155,6 +155,13 @@ for c in test_cols:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce").replace(0, np.nan)
 
+# ---> FIX: Ép kiểu và hiển thị đúng 2 chữ số thập phân cho độ dày (Gauge)
+if "Order_Gauge" in df.columns:
+    df["Order_Gauge"] = pd.to_numeric(df["Order_Gauge"], errors="coerce")
+    df["Order_Gauge"] = df["Order_Gauge"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+
+# Loại bỏ các dòng không có độ cứng Line
+df = df.dropna(subset=["Hardness_LINE"])
 # Loại bỏ các dòng không có độ cứng Line
 df = df.dropna(subset=["Hardness_LINE"])
 
@@ -170,12 +177,24 @@ if st.sidebar.button("🔄 Refresh Data"):
 all_specs = sorted(df["Product_Spec"].dropna().astype(str).unique()) if "Product_Spec" in df else []
 all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolling_Type" in df else []
 all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
+# Lấy danh sách Gauge (đã là text 1.50)
+all_gauge = sorted(df["Order_Gauge"].dropna().unique()) if "Order_Gauge" in df else []
 all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
 
 specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
 rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
 metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal)) if all_metal else "All"
-qgroup = st.sidebar.selectbox("4. Quality Group", ["All"] + list(all_qgroup)) if all_qgroup else "All"
+gauge = st.sidebar.selectbox("4. Order Gauge (Thickness)", ["All"] + list(all_gauge)) if all_gauge else "All"
+qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup)) if all_qgroup else "All"
+
+df_master_full = df.copy() 
+
+if specs_filter != "All" and "Product_Spec" in df: df = df[df["Product_Spec"].astype(str) == specs_filter]
+if rolling != "All" and "Rolling_Type" in df: df = df[df["Rolling_Type"].astype(str) == rolling]
+if metal != "All" and "Metallic_Type" in df: df = df[df["Metallic_Type"].astype(str) == metal]
+# Lọc trực tiếp bằng text thay vì float
+if gauge != "All" and "Order_Gauge" in df: df = df[df["Order_Gauge"] == gauge]
+if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
 
 df_master_full = df.copy() 
 

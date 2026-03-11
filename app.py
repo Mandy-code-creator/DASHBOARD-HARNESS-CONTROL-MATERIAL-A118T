@@ -784,3 +784,121 @@ for i, (_, g) in enumerate(valid.iterrows()):
             styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
                                       .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
+elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+        st.markdown(f"#### 🧮 AI Prediction Engine: {group_title}")
+        
+        # Bỏ đi các dòng thiếu dữ liệu để AI học
+        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+        
+        if len(train_df) < 3:
+            st.warning("⚠️ Cần ít nhất 3 cuộn thép (coils) có đủ số liệu cơ tính để kích hoạt AI Prediction.")
+        else:
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                mean_h = train_df["Hardness_LINE"].mean()
+                target_h = st.number_input("🎯 Target Hardness", value=float(round(mean_h, 1)), step=0.1, key=f"ai_{i}")
+            
+            X_train = train_df[["Hardness_LINE"]].values
+            preds = {}
+            model_metrics = {}
+            
+            for col in ["TS", "YS", "EL"]:
+                # Huấn luyện mô hình
+                model = LinearRegression().fit(X_train, train_df[col].values)
+                val = model.predict([[target_h]])[0]
+                preds[col] = val 
+                
+                # Tính độ tin cậy (R2 và RMSE)
+                y_true = train_df[col].values
+                y_pred = model.predict(X_train)
+                r2 = r2_score(y_true, y_pred)
+                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+                model_metrics[col] = {"r2": r2, "rmse": rmse}
+
+            # ================================
+            # VẼ BIỂU ĐỒ TƯƠNG TÁC PLOTLY
+            # ================================
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} 
+            idx = list(range(len(train_df)))
+            nxt = len(train_df)
+
+            for col in ["TS", "YS", "EL"]:
+                sec = (col == "EL")
+                
+                # 1. Đường lịch sử (History)
+                fig.add_trace(go.Scatter(
+                    x=idx, y=train_df[col], 
+                    mode='lines', 
+                    line=dict(color=colors[col], width=2, shape='spline'), 
+                    name=f"{col} (History)",
+                    opacity=0.6,
+                    hoverinfo='y' 
+                ), secondary_y=sec)
+                
+                last_val_raw = train_df[col].iloc[-1]
+                pred_clean = round(preds[col], 1) if col == "EL" else int(round(preds[col]))
+                last_clean = round(last_val_raw, 1) if col == "EL" else int(round(last_val_raw))
+                
+                # 2. Đường đứt nét nối tới tương lai (Connector)
+                fig.add_trace(go.Scatter(
+                    x=[idx[-1], nxt], y=[last_val_raw, preds[col]],
+                    mode='lines',
+                    line=dict(color=colors[col], width=2, dash='dot'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ), secondary_y=sec)
+
+                # 3. Điểm Dự Báo (Tương lai)
+                fig.add_trace(go.Scatter(
+                    x=[nxt], y=[preds[col]], 
+                    mode='markers+text', 
+                    text=[f"<b>{pred_clean}</b>"], 
+                    textposition="middle right" if nxt < 10 else "top center",
+                    marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
+                    name=f"Pred {col}",
+                    hovertemplate=(
+                        f"<b>🎯 Pred {col}: {pred_clean}</b><br>"
+                        f"🔙 Last {col}: {last_clean}<br>"
+                        f"📈 Change: {pred_clean - last_clean:.1f}"
+                        "<extra></extra>"
+                    )
+                ), secondary_y=sec)
+
+            # Phân tách vùng Lịch sử và Dự báo
+            fig.add_vline(x=nxt - 0.5, line_width=1, line_dash="dash", line_color="gray")
+            fig.add_annotation(x=nxt - 0.5, y=1.05, yref="paper", text="Forecast Zone ➔", showarrow=False, font=dict(color="gray"))
+
+            fig.update_layout(
+                height=500,
+                title=dict(text=f"📈 AI Prediction at Target Hardness = {target_h}", font=dict(size=18)),
+                plot_bgcolor="white",
+                hovermode="closest",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=20, r=20, t=80, b=20)
+            )
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee', title="Coil Sequence")
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False, title="Strength (MPa)")
+            fig.update_yaxes(showgrid=False, secondary_y=True, title="Elongation (%)")
+
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # ================================
+            # CARDS SUMMARY KÈM ĐỘ TIN CẬY
+            # ================================
+            st.markdown("##### 🏁 Forecast Summary & Confidence Score")
+            c1, c2, c3 = st.columns(3)
+            
+            def get_delta(p, l): return round(p - l, 1)
+            last_ts = train_df["TS"].iloc[-1]
+            last_ys = train_df["YS"].iloc[-1]
+            last_el = train_df["EL"].iloc[-1]
+
+            c1.metric("Tensile Strength (TS)", f"{int(round(preds['TS']))} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last")
+            c1.caption(f"🎯 **R² Score:** {model_metrics['TS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['TS']['rmse']:.1f}")
+
+            c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
+            c2.caption(f"🎯 **R² Score:** {model_metrics['YS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['YS']['rmse']:.1f}")
+
+            c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
+            c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['EL']['rmse']:.1f}")

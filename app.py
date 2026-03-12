@@ -50,14 +50,16 @@ def add_custom_css():
 add_custom_css()
 
 # ================================
+# ================================
 # DYNAMIC TARGET SETTINGS (SIDEBAR)
 # ================================
 st.sidebar.header("⚙️ GLOBAL SETTINGS")
 st.sidebar.markdown("**🎯 Target Hardness (HRB)**")
 c_t1, c_t2 = st.sidebar.columns(2)
-# 允許使用者動態調整目標硬度 (Allow users to dynamically adjust target hardness)
-TARGET_MIN = c_t1.number_input("Target Min", value=85.0, step=0.5, format="%.1f")
-TARGET_MAX = c_t2.number_input("Target Max", value=90.0, step=0.5, format="%.1f")
+
+# 加入 unique key 避免 DuplicateElementId 錯誤 (Add unique keys to avoid duplicate ID errors)
+TARGET_MIN = c_t1.number_input("Target Min", value=85.0, step=0.5, format="%.1f", key="global_target_min")
+TARGET_MAX = c_t2.number_input("Target Max", value=90.0, step=0.5, format="%.1f", key="global_target_max")
 st.sidebar.markdown("---")
 
 # ================================

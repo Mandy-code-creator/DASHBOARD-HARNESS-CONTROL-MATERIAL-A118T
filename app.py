@@ -1121,8 +1121,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mu = data.mean()
             std_dev = data.std()
             
+            # 算法 M1 (Algorithm M1)
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             
+            # 算法 M2 (Algorithm M2)
             Q1 = data.quantile(0.25)
             Q3 = data.quantile(0.75)
             IQR = Q3 - Q1
@@ -1132,10 +1134,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if pd.isna(sigma_clean) or sigma_clean == 0: sigma_clean = std_dev
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
             
+            # 算法 M3 (Algorithm M3)
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
             
+            # 算法 M4 (Algorithm M4)
             mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
@@ -1154,10 +1158,30 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
             
+            # ==================================================================
+            # 綜合界限圖表與常態分佈曲線 (Combined Limits Chart with Normal Curve)
+            # ==================================================================
+            from scipy.stats import norm
             fig, ax = plt.subplots(figsize=(12, 5))
+            
+            # 繪製實際資料分佈直方圖 (Plot actual data histograms)
             ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
             if not data_lab.empty: ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
             
+            # 加入常態分佈曲線 (Add normal curve)
+            min_cands = [m1_min, m4_min, spec_min, data.min()]
+            max_cands = [m1_max, m4_max, display_max, data.max()]
+            if not data_lab.empty:
+                min_cands.append(data_lab.min())
+                max_cands.append(data_lab.max())
+                
+            x_min_val = min(min_cands) - 5
+            x_max_val = max(max_cands) + 5
+            x_axis = np.linspace(x_min_val, x_max_val, 500)
+            
+            ax.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="#333333", lw=2, alpha=0.8, label=f"Normal Curve (σ={std_dev:.2f})")
+            
+            # 繪製各方法控制界限 (Plot control limits for each method)
             ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
             ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
             ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
@@ -1169,51 +1193,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
             if display_max > 0: ax.axvline(display_max, c="black", lw=2)
             
-            ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=11, fontweight="bold")
+            ax.set_title(f"Limits Comparison with Normal Distribution (σ={sigma_n})", fontsize=11, fontweight="bold")
             ax.legend(loc="upper right", fontsize="small")
             st.pyplot(fig)
 
-            # 繪製 LINE 和 LAB 的直方圖 (Plot histograms for LINE and LAB)
-            st.write("---") 
-            st.markdown(f"#### 📊 Detailed Distribution Analysis")
-            
-            from scipy.stats import norm
-            n_samples = len(data)
-            bins_sturges = int(round(1 + 3.322 * np.log10(n_samples))) if n_samples > 0 else 10
-            
-            fig2, ax2 = plt.subplots(figsize=(12, 6))
-            
-            ax2.hist(data, bins=bins_sturges, density=True, alpha=0.3, color="#1f77b4", label="LINE Actual")
-            if not data_lab.empty:
-                ax2.hist(data_lab, bins=bins_sturges, density=True, alpha=0.3, color="#ff7f0e", label="LAB Actual")
-            
-            # 調整 X 軸以涵蓋 LAB 和 LINE (Adjust X-axis to cover both LAB and LINE)
-            min_candidates = [m1_min, m4_min, spec_min, data.min()]
-            max_candidates = [m1_max, m4_max, display_max, data.max()]
-            if not data_lab.empty:
-                min_candidates.append(data_lab.min())
-                max_candidates.append(data_lab.max())
-                
-            x_min_val = min(min_candidates) - 5
-            x_max_val = max(max_candidates) + 5
-            x_axis = np.linspace(x_min_val, x_max_val, 500)
-            
-            ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Curve (σ={std_dev:.2f})")
-            ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label=f"M4 Curve (σ={sigma_imr:.2f})")
-
-            ax2.axvline(m1_min, color="red", ls=":", lw=1.5); ax2.axvline(m1_max, color="red", ls=":", lw=1.5)
-            ax2.axvline(m4_min, color="purple", ls="-.", lw=2); ax2.axvline(m4_max, color="purple", ls="-.", lw=2)
-            
-            if spec_min > 0: ax2.axvline(spec_min, color="black", lw=2.5, label="Control Spec")
-            if display_max > 0: ax2.axvline(display_max, color="black", lw=2.5)
-
-            ax2.xaxis.set_major_locator(plt.MultipleLocator(5))
-            ax2.xaxis.set_minor_locator(plt.MultipleLocator(1))
-            ax2.grid(which='both', axis='x', linestyle='--', alpha=0.3)
-            ax2.set_title(f"Detailed Analysis (Sturges k={bins_sturges})", fontsize=11, fontweight="bold")
-            ax2.legend(loc="upper right", fontsize="small")
-            st.pyplot(fig2)
-            
+            # ==================================================================
+            # 預估機械性能表與匯出 (Mechanical Estimation Table & Export)
+            # ==================================================================
             st.write("---") 
             st.markdown(f"#### 📌 Limit Summary & Mechanical Estimation")
             
@@ -1344,11 +1330,30 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 key=f"dl_sum_{i}"
             )
             
+        # --- 顯示所有分組的整體總結表 (Display overall summary table for all groups) ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown("## 📊 Summary of Control Limits")
             df_total = pd.DataFrame(all_groups_summary)
+            
             styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
                                       .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            st.download_button("📥 Export Complete SPC Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_A118T.csv")
+            
+            # 轉換為 Excel 檔案並自動調整欄寬 (Convert to Excel file and auto-adjust column width)
+            import io
+            buffer_spc = io.BytesIO()
+            with pd.ExcelWriter(buffer_spc, engine='xlsxwriter') as writer:
+                df_total.to_excel(writer, sheet_name='SPC_Summary', index=False)
+                worksheet = writer.sheets['SPC_Summary']
+                for idx, col_name in enumerate(df_total.columns):
+                    # 抓取標題或內容的最大長度來設定欄寬 (Get max length of header or content to set column width)
+                    max_len = max(df_total[col_name].astype(str).map(len).max(), len(col_name)) + 2
+                    worksheet.set_column(idx, idx, max_len)
+
+            st.download_button(
+                label="📥 Export Complete SPC Summary (Excel)",
+                data=buffer_spc.getvalue(),
+                file_name=f"SPC_Summary_A118T_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )

@@ -595,6 +595,20 @@ for i, (_, g) in enumerate(valid.iterrows()):
         # 移除 Rolling_Type 欄位 (Remove Rolling_Type column for cleaner view)
         display_df = sub.drop(columns=["Rolling_Type"]) if "Rolling_Type" in sub.columns else sub.copy()
         
+        # 找出所有日期欄位並格式化，去除後方的 00:00:00 (Format datetime to remove 00:00:00)
+        date_cols = display_df.select_dtypes(include=['datetime', 'datetimetz']).columns.tolist()
+        for d_col in date_cols:
+            display_df[d_col] = display_df[d_col].dt.strftime('%Y-%m-%d')
+            
+        # 備用方案：如果欄位名稱包含 DATE 但被識別為字串，則強制轉換 
+        # (Fallback: force format string columns containing 'DATE')
+        for col in display_df.columns:
+            if 'DATE' in str(col).upper() and col not in date_cols:
+                try:
+                    display_df[col] = pd.to_datetime(display_df[col]).dt.strftime('%Y-%m-%d')
+                except:
+                    pass
+        
         # 根據 NG 標籤標記異常行 (Highlight NG rows in red)
         def highlight_ng_rows(row): 
             return ['background-color: #ffe6e6'] * len(row) if row.get('NG', False) else [''] * len(row)

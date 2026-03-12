@@ -567,64 +567,95 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
 
 # ==============================================================================
-# 👑 MASTER DICTIONARY EXPORT (FULL VIEW)
+# ==============================================================================
+# 👑 MASTER DICTIONARY EXPORT (AUTO-OPTIMIZED BY CALCULATION RESULTS)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary (A118T)")
+    st.info("💡 **Smart Selection Active:** This tool evaluates M1-M4 methods and automatically exports the **Optimal Proposal** that satisfies all Mechanical Specifications.")
     
-    col_sig1, col_sig2 = st.columns(2)
-    with col_sig1: target_k = st.number_input("🎯 Target Zone Multiplier (Default: 1.0 σ)", value=1.0, step=0.1, key="k_target")
-    with col_sig2: control_k = st.number_input("🚧 Control Limit Multiplier (Default: 3.0 σ)", value=3.0, step=0.5, key="k_control")
-    
-    if st.button("🚀 Generate & Download Master Dictionary", type="primary"):
+    if st.button("🚀 Generate & Export Optimal Dictionary", type="primary"):
         master_data = []
         clean_master_df = df_master_full.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
         
-        for keys, group in clean_master_df.groupby(GROUP_COLS):
-            valid_coils_count = len(group)
-            if valid_coils_count < 3: continue 
-            
-            mean_hrb = group['Hardness_LINE'].mean()
-            std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
-            mrs = np.abs(np.diff(group['Hardness_LINE'].values)) 
-            sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else std_hrb 
-            
-            t_min, t_max = mean_hrb - (target_k * std_hrb), mean_hrb + (target_k * std_hrb)
-            c_min, c_max = mean_hrb - (control_k * std_hrb), mean_hrb + (control_k * std_hrb)
-            imr_min, imr_max = mean_hrb - (control_k * sigma_imr), mean_hrb + (control_k * sigma_imr)
-            
-            ts_mu, ts_sig = group['TS'].mean(), group['TS'].std() if valid_coils_count > 1 else 0
-            ys_mu, ys_sig = group['YS'].mean(), group['YS'].std() if valid_coils_count > 1 else 0
-            el_mu, el_sig = group['EL'].mean(), group['EL'].std() if valid_coils_count > 1 else 0
-            
-            target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
-            if len(target_group) > 0:
-                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
-                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-                curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
-                
-                exp_ts_min, exp_ts_max = target_group['TS'].mean() - (control_k * target_group['TS'].std()), target_group['TS'].mean() + (control_k * target_group['TS'].std())
-                exp_ys_min, exp_ys_max = target_group['YS'].mean() - (control_k * target_group['YS'].std()), target_group['YS'].mean() + (control_k * target_group['YS'].std())
-                exp_el_min, exp_el_max = max(0, target_group['EL'].mean() - (control_k * target_group['EL'].std())), target_group['EL'].mean() + (control_k * target_group['EL'].std())
+        # 預設運算參數 (Default Calculation Parameters)
+        sigma_n = 3.0
+        iqr_k = 0.5
+        target_k = 1.0
 
-                master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(GROUP_COLS)}
-                master_dict.update({
-                    "Current HRB Limit": curr_limit_str, "Valid Coils (N)": valid_coils_count,
-                    "Std Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}", "I-MR Limit (HRB)": f"{imr_min:.1f} ~ {imr_max:.1f}",
-                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
-                    "TS Control": f"{ts_mu - control_k*ts_sig:.0f} ~ {ts_mu + control_k*ts_sig:.0f}", "Expected TS": f"{exp_ts_min:.0f} ~ {exp_ts_max:.0f}",
-                    "YS Control": f"{ys_mu - control_k*ys_sig:.0f} ~ {ys_mu + control_k*ys_sig:.0f}", "Expected YS": f"{exp_ys_min:.0f} ~ {exp_ys_max:.0f}",
-                    "EL Control": f"{max(0, el_mu - control_k*el_sig):.1f} ~ {el_mu + control_k*el_sig:.1f}", "Expected EL": f"{exp_el_min:.1f} ~ {exp_el_max:.1f}"
-                })
-                master_data.append(master_dict)
+        for keys, group in clean_master_df.groupby(GROUP_COLS):
+            if len(group) < 3: continue 
+            
+            # --- 核心運算：與 Calculator 邏輯同步 (Core Calculation: Synced with Calculator) ---
+            data = group["Hardness_LINE"]
+            mu, std_dev = data.mean(), data.std()
+            spec_min, spec_max = group['Limit_Min'].max(), group['Limit_Max'].min()
+            
+            # M4: I-MR (Optimal SPC)
+            mrs = np.abs(np.diff(data.values))
+            sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else std_dev
+            m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
+            
+            # AI 預測模型 (AI Prediction Model)
+            X_train = group[["Hardness_LINE"]].values
+            m_ts = LinearRegression().fit(X_train, group["TS"].values)
+            m_ys = LinearRegression().fit(X_train, group["YS"].values)
+            m_el = LinearRegression().fit(X_train, group["EL"].values)
+            
+            def check_optimal(h_min, h_max):
+                ts1, ts2 = m_ts.predict([[h_min]])[0], m_ts.predict([[h_max]])[0]
+                ys1, ys2 = m_ys.predict([[h_min]])[0], m_ys.predict([[h_max]])[0]
+                el1, el2 = m_el.predict([[h_min]])[0], m_el.predict([[h_max]])[0]
+                
+                # 取得該組機械性能規格 (Get Spec for this group)
+                s_ts_min = group["Standard TS min"].max()
+                s_ts_max = group["Standard TS max"].min()
+                s_ys_min = group["Standard YS min"].max()
+                s_ys_max = group["Standard YS max"].min()
+                s_el_min = group["Standard EL min"].max()
+                
+                # 判定是否全數通過 (Judge if all pass)
+                ts_ok = (ts1 >= (s_ts_min or 0)) and (ts2 <= (s_ts_max or 9999))
+                ys_ok = (ys1 >= (s_ys_min or 0)) and (ys2 <= (s_ys_max or 9999))
+                el_ok = (el1 >= (s_el_min or 0)) and (el2 >= (s_el_min or 0))
+                return ts_ok and ys_ok and el_ok
+
+            # 自動選擇最優方案：優先選 M4，若不通過則改採 Target Zone (Auto-select: M4 first, else Target)
+            final_min, final_max, method_used = 0, 0, ""
+            if check_optimal(m4_min, m4_max):
+                final_min, final_max, method_used = m4_min, m4_max, "M4: I-MR (Optimal)"
+            else:
+                t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
+                final_min, final_max, method_used = t_min, t_max, "Target Zone (Narrowed)"
+
+            # 建立匯出字典 (Create export dictionary)
+            master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(GROUP_COLS)}
+            master_dict.update({
+                "N Coils": len(group),
+                "Selected Method": method_used,
+                "Proposed LSL (Hardness)": round(final_min, 1),
+                "Proposed USL (Hardness)": round(final_max, 1),
+                "Exp. TS": f"{int(m_ts.predict([[final_min]])[0])}~{int(m_ts.predict([[final_max]])[0])}",
+                "Exp. YS": f"{int(m_ys.predict([[final_min]])[0])}~{int(m_ys.predict([[final_max]])[0])}",
+                "Exp. EL": f"{m_el.predict([[final_min]])[0]:.1f}~{m_el.predict([[final_max]])[0]:.1f}%",
+                "Spec Safety": "✅ Safe" if (final_max <= spec_max and final_min >= spec_min) else "⚠️ Tight Spec"
+            })
+            master_data.append(master_dict)
         
-        if len(master_data) > 0:
-            output_buffer = BytesIO()
-            pd.DataFrame(master_data).to_excel(output_buffer, index=False)
-            st.success(f"✅ Dictionary successfully generated for **{len(master_data)} product groups**.")
-            st.download_button("📥 Download Master Report (Excel)", data=output_buffer.getvalue(), file_name=f"Master_Dictionary_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.ms-excel")
-        else: st.warning("⚠️ Not enough data to generate dictionary.")
+        if master_data:
+            df_out = pd.DataFrame(master_data)
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_out.to_excel(writer, sheet_name='Optimal_Limits', index=False)
+                workbook, worksheet = writer.book, writer.sheets['Optimal_Limits']
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+                for col_num, value in enumerate(df_out.columns.values):
+                    worksheet.write(0, col_num, value, header_fmt)
+                    worksheet.set_column(col_num, col_num, 18)
+            
+            st.success(f"✅ Optimal Dictionary created for {len(master_data)} groups!")
+            st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), f"Optimal_Master_{datetime.now().strftime('%Y%m%d')}.xlsx")
     st.stop()
 
 # ==============================================================================

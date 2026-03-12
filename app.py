@@ -79,9 +79,9 @@ if date_col:
     min_date = raw[date_col].min()
     max_date = raw[date_col].max()
     if pd.notna(min_date) and pd.notna(max_date):
-        data_period_str = f"{min_date.strftime('%d/%m/%Y')} - {max_date.strftime('%d/%m/%Y')}"
+        data_period_str = f"{min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}"
 
-current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
+current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 st.markdown(f"""
 <div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
     <strong>🕒 Report Generated:</strong> {current_time} &nbsp;&nbsp;|&nbsp;&nbsp; 
@@ -156,14 +156,15 @@ df["Lab_Min"] = df["Limit_Min"]
 df["Lab_Max"] = df["Limit_Max"]
 df["Rule_Name"] = "Direct Spec"
 
-# 將 0 替換為 NA 以移除異常值 (Replace 0 with NA to remove outliers)
+# 將 0 替換為 NA 以移除異常值 (Replace 0 with NA to remove outliers completely)
 test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", 
              "Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", 
              "Standard EL min", "Standard EL max"]
 
 for c in test_cols:
     if c in df.columns:
-        df[c] = pd.to_numeric(df[c], errors="coerce").replace(0, np.nan)
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+        df.loc[df[c] == 0, c] = np.nan 
 
 # 強制 Gauge 顯示兩位小數 (Force 2 decimal format for Gauge)
 if "Order_Gauge" in df.columns:
@@ -229,7 +230,6 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
-# ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
@@ -240,9 +240,11 @@ if view_mode == "📊 Executive KPI Dashboard":
         st.warning("⚠️ Insufficient Mechanical Properties data for the selected filters.")
     else:
         total_coils = len(df_kpi)
+        
+        # 縮減為 1 位小數以節省空間 (Reduce to 1 decimal place to save space)
         def clean_num(val, is_pct=False):
             if pd.isna(val): return "0%" if is_pct else "0"
-            v = round(float(val), 2)
+            v = round(float(val), 1) 
             res = str(int(v)) if v.is_integer() else str(v)
             return f"{res}%" if is_pct else res
 
@@ -265,10 +267,11 @@ if view_mode == "📊 Executive KPI Dashboard":
         st.markdown("### 🏆 Overall Quality Metrics")
         col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
         
-        col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
-        col2.metric("✅ Mech Yield Rate", clean_num(yield_rate, True), clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect")
-        col3.metric("🎯 Std HRB Yield", clean_num(hrb_yield, True), clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "In Control")
-        col4.metric(f"🌟 Target Yield ({TARGET_MIN}-{TARGET_MAX})", clean_num(target_yield, True))
+        # 縮短標題名稱避免溢出 (Shorten labels to prevent overflow)
+        col1.metric("📦 Total Coils", f"{total_coils:,}")
+        col2.metric("✅ Mech Yield", clean_num(yield_rate, True), clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect")
+        col3.metric("🎯 HRB Yield", clean_num(hrb_yield, True), clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "Control")
+        col4.metric(f"🌟 Target Yield", clean_num(target_yield, True))
         col5.metric("TS Pass", clean_num(df_kpi['TS_Pass'].mean() * 100, True))
         col6.metric("YS Pass", clean_num(df_kpi['YS_Pass'].mean() * 100, True))
         col7.metric("EL Pass", clean_num(df_kpi['EL_Pass'].mean() * 100, True))
@@ -322,12 +325,12 @@ if view_mode == "📊 Executive KPI Dashboard":
             
             st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             
-            # --- 更新：包含所有機械性能規格的直方圖矩陣 (Updated: Histogram matrix including all mech specs) ---
+            # 包含所有機械性能規格的直方圖矩陣 (Histogram matrix including all mech specs)
             st.markdown("#### 🔔 Visual Deep Dive: Top 10 Risk Distributions (Hardness & Mechanical)")
             top_10_risks = risk_top.head(10).to_dict('records')
             
             if len(top_10_risks) > 0:
-                chart_cols = st.columns(2) # 變更為每行 2 個以提供更多空間 (Changed to 2 per row for more space)
+                chart_cols = st.columns(2) # 每行 2 個以提供更多空間 (2 per row for more space)
                 for idx, item in enumerate(top_10_risks):
                     spec, mat, gauge_val = item.get("Specification", "N/A"), item.get("Material", "N/A"), item.get("Gauge", "N/A")
                     tdf = df_kpi[(df_kpi.get("Product_Spec", "") == spec) & (df_kpi.get("Material", "") == mat) & (df_kpi.get("Order_Gauge", "") == gauge_val)]
@@ -379,7 +382,7 @@ if view_mode == "📊 Executive KPI Dashboard":
             st.markdown("#### 📑 Export Actionable Report")
             import streamlit.components.v1 as components
             col_csv, col_pdf, _ = st.columns([2, 2, 6])
-            with col_csv: st.download_button("📥 Download Watchlist (CSV)", data=risk_top.to_csv(index=False).encode('utf-8-sig'), file_name="High_Risk.csv", mime="text/csv", use_container_width=True)
+            with col_csv: st.download_button("📥 Download Watchlist (CSV)", data=risk_top.to_csv(index=False).encode('utf-8-sig'), file_name="High_Risk_Watchlist.csv", mime="text/csv", use_container_width=True)
             with col_pdf: 
                 if st.button("🖨️ Save as PDF", use_container_width=True): components.html("<script>window.parent.print();</script>", height=0)
     st.stop()
@@ -614,8 +617,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         for d_col in date_cols:
             display_df[d_col] = display_df[d_col].dt.strftime('%Y-%m-%d')
             
-        # 備用方案：如果欄位名稱包含 DATE 但被識別為字串，則強制轉換 
-        # (Fallback: force format string columns containing 'DATE')
+        # 備用方案：如果欄位名稱包含 DATE 但被識別為字串，則強制轉換 (Fallback: force format string columns containing 'DATE')
         for col in display_df.columns:
             if 'DATE' in str(col).upper() and col not in date_cols:
                 try:
@@ -629,7 +631,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         
         num_cols = display_df.select_dtypes(include=[np.number]).columns.tolist()
         
-        # 設定數值格式：硬度保留 1 位小數，其他數值（包含 Limit_Min/Max 等）皆去除小數點
+        # 設定數值格式：硬度保留 1 位小數，其他數值（包含 Limit_Min/Max 等）皆去除小數點 
         # (Format numeric columns: Hardness keeps 1 decimal, Limit_Min/Max and others keep 0 decimals)
         fmt = {}
         for c in num_cols:
@@ -639,6 +641,71 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 fmt[c] = "{:.0f}"
                 
         st.dataframe(display_df.style.format(fmt).apply(highlight_ng_rows, axis=1), use_container_width=True)
+
+    elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
+        tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
+        
+        with tab_trend:
+            x = np.arange(1, len(sub)+1)
+            fig, ax = plt.subplots(figsize=(10, 4.5))
+            if "Hardness_LAB" in sub.columns and not sub["Hardness_LAB"].isna().all(): ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
+            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
+            
+            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Std LSL={lo}")
+            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Std USL={hi}")
+            ax.axhline(TARGET_MIN, linestyle="--", linewidth=2, color="green", label=f"Target LSL={TARGET_MIN}")
+            ax.axhline(TARGET_MAX, linestyle="--", linewidth=2, color="green", label=f"Target USL={TARGET_MAX}")
+            ax.fill_between(x, TARGET_MIN, TARGET_MAX, color="green", alpha=0.1, label="Target Zone")
+            
+            ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
+            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=5)
+            plt.tight_layout(); st.pyplot(fig)
+            
+        with tab_dist:
+            line = sub["Hardness_LINE"].dropna()
+            lab = sub["Hardness_LAB"].dropna() if "Hardness_LAB" in sub.columns else pd.Series(dtype=float)
+            
+            if len(line) < 5: st.warning("⚠️ At least 5 coils are required for distribution analysis.")
+            else:
+                spc_line = None
+                if len(line) >= 2 and line.std(ddof=1) > 0:
+                    mean, std = line.mean(), line.std(ddof=1)
+                    cp = (hi - lo) / (6 * std)
+                    ca = ((mean - (hi + lo) / 2) / ((hi - lo) / 2)) * 100
+                    cpu, cpl = (hi - mean) / (3 * std), (mean - lo) / (3 * std)
+                    spc_line = (mean, std, cp, ca, min(cpu, cpl))
+
+                mean_line, std_line = line.mean(), line.std(ddof=1)
+                
+                vals = [line.min(), line.max(), lo, hi, TARGET_MIN, TARGET_MAX]
+                if not lab.empty: vals.extend([lab.min(), lab.max()])
+                x_min, x_max = min(vals) - 2, max(vals) + 2
+                
+                fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
+                ax_dist.hist(line, bins=np.linspace(x_min, x_max, 30), density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
+                if not lab.empty: ax_dist.hist(lab, bins=np.linspace(x_min, x_max, 30), density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
+                
+                if std_line > 0:
+                    xs = np.linspace(x_min, x_max, 400)
+                    ax_dist.plot(xs, (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2), linewidth=2.5, color="#b25e00", label="LINE Fit")
+                
+                ax_dist.axvline(lo, linestyle="--", linewidth=2, color="red", label="Std LSL")
+                ax_dist.axvline(hi, linestyle="--", linewidth=2, color="red", label="Std USL")
+                ax_dist.axvline(TARGET_MIN, linestyle=":", linewidth=2, color="green", label="Target LSL")
+                ax_dist.axvline(TARGET_MAX, linestyle=":", linewidth=2, color="green", label="Target USL")
+                ax_dist.axvspan(TARGET_MIN, TARGET_MAX, color="green", alpha=0.1)
+
+                ax_dist.set_xlim(x_min, x_max)
+                ax_dist.set_title("Hardness Distribution (LINE vs LAB)", weight="bold")
+                ax_dist.legend(); ax_dist.grid(alpha=0.3)
+                st.pyplot(fig_dist)
+
+                if spc_line:
+                    mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
+                    eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
+                    color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
+                    df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
+                    st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
 
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
         if i == 0: corr_bin_summary = []
@@ -873,7 +940,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(filt[["TS", "YS", "EL"]].describe().T.style.format("{:.1f}"), use_container_width=True)
         else: st.error("No coils found.")
 
-   elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
+    elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         # 獲取當前組別的機械性能標準規範 (Get current mechanical standard specs for the group)
         spec_ts_min = sub["Standard TS min"].max() if "Standard TS min" in sub.columns else 0
         spec_ts_max = sub["Standard TS max"].min() if "Standard TS max" in sub.columns else 0

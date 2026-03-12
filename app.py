@@ -572,6 +572,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
 # ==============================================================================
 # ==============================================================================
+# ==============================================================================
 # 👑 MASTER DICTIONARY EXPORT (VIEW ON SCREEN & DOWNLOAD)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
@@ -584,7 +585,7 @@ if view_mode == "👑 Master Dictionary Export":
         clean_master_df = df_master_full.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
         
         # 運算基準 (Calculation Baselines)
-        sigma_n = 3.0  # Control Limit
+        sigma_n = 2.0  # Control Limit (Siết chặt xuống 2 Sigma theo yêu cầu)
         target_k = 1.0 # Target Zone
 
         for keys, group in clean_master_df.groupby(GROUP_COLS):
@@ -596,7 +597,7 @@ if view_mode == "👑 Master Dictionary Export":
             mrs = np.abs(np.diff(data.values))
             sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else data.std()
             
-            # 1. 建議控制界限 (M4: I-MR 3σ)
+            # 1. 建議控制界限 (M4: I-MR 2σ)
             c_min, c_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
             # 2. 建議目標界限 (Target 1σ)
             t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
@@ -627,7 +628,7 @@ if view_mode == "👑 Master Dictionary Export":
             master_dict.update({
                 "N Coils": len(group),
                 "Current Hardness Spec": f"{group['Limit_Min'].max():.1f}~{group['Limit_Max'].min():.1f}",
-                "Proposed Control Limit (3σ)": f"{c_min:.1f} ~ {c_max:.1f}",
+                "Proposed Control Limit (2σ)": f"{c_min:.1f} ~ {c_max:.1f}",
                 "🎯 Proposed Target Zone (1σ)": f"{t_min:.1f} ~ {t_max:.1f}",
                 
                 "Spec: TS": fmt_s(s_ts_min, s_ts_max),
@@ -647,7 +648,7 @@ if view_mode == "👑 Master Dictionary Export":
             # 強制指定欄位排序 (Force column ordering for logical flow)
             ordered_cols = GROUP_COLS + [
                 "N Coils", 
-                "Current Hardness Spec", "Proposed Control Limit (3σ)", "🎯 Proposed Target Zone (1σ)",
+                "Current Hardness Spec", "Proposed Control Limit (2σ)", "🎯 Proposed Target Zone (1σ)",
                 "Spec: TS", "Exp. TS (at Target)",
                 "Spec: YS", "Exp. YS (at Target)",
                 "Spec: EL", "Exp. EL (at Target)"
@@ -661,11 +662,12 @@ if view_mode == "👑 Master Dictionary Export":
             # 套用與 Excel 相同的顏色邏輯 (Apply the same color logic as Excel to the Streamlit dataframe)
             styled_df = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in final_cols if "Spec:" in c or "Current Hardness Spec" in c]) \
                                     .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in final_cols if "Target" in c or "Exp." in c]) \
-                                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=["Proposed Control Limit (3σ)"])
+                                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=["Proposed Control Limit (2σ)"])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             # --- 2. 準備 Excel 匯出檔案 (Prepare Excel Export file) ---
+            import datetime as dt
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, sheet_name='Master_Specs', index=False)
@@ -689,9 +691,8 @@ if view_mode == "👑 Master Dictionary Export":
             
             st.markdown("### 📥 Download Report")
             st.success(f"✅ Full Master Dictionary created for {len(master_data)} groups!")
-            st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{datetime.now().strftime('%Y%m%d')}.xlsx")
+            st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
     st.stop()
-
 # ==============================================================================
 # MAIN LOOP FOR ALL OTHER VIEWS 
 # ==============================================================================

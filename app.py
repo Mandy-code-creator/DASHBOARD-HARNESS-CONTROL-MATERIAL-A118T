@@ -88,7 +88,7 @@ if date_col:
     if pd.notna(min_date) and pd.notna(max_date):
         data_period_str = f"{min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}"
 
-# 絕對安全的台灣時區設定法 (Absolutely safe Taiwan timezone setting using alias)
+# 絕對安全的台灣時區設定法 (Absolutely safe Taiwan timezone setting)
 import datetime as dt
 tz_tw = dt.timezone(dt.timedelta(hours=8))
 current_time = dt.datetime.now(tz_tw).strftime("%Y-%m-%d %H:%M")

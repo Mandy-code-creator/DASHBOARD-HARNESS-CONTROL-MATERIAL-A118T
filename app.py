@@ -26,7 +26,21 @@ def add_custom_css():
         .stApp { background-color: #ffffff; }
         [data-testid="stSidebar"] { background-color: #ffffff; box-shadow: 2px 0 5px rgba(0,0,0,0.05); border-right: none; }
         h1, h2, h3 { color: #2c3e50 !important; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 600; }
-        [data-testid="stMetricValue"] { background-color: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: #007bff; }
+        
+        /* 調整指標卡片字體大小與換行以避免截斷 (Adjust metric card font size and wrap to prevent truncation) */
+        [data-testid="stMetricValue"] { 
+            background-color: white; 
+            padding: 10px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+            color: #007bff; 
+            font-size: 1.6rem !important; 
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.85rem !important;
+            white-space: normal !important; 
+        }
+        
         thead tr th:first-child {display:none}
         tbody th {display:none}
         .stDataFrame { border: none !important; }

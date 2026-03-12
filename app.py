@@ -188,24 +188,51 @@ if st.sidebar.button("🔄 Refresh Data"):
     st.rerun()
 
 all_specs = sorted(df["Product_Spec"].dropna().astype(str).unique()) if "Product_Spec" in df else []
-all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolling_Type" in df else []
-all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
-all_gauge = sorted(df["Order_Gauge"].dropna().unique()) if "Order_Gauge" in df else []
-all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
+    all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolling_Type" in df else []
+    all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
+    all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
 
-specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
-rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
-metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal)) if all_metal else "All"
-gauge = st.sidebar.selectbox("4. Order Gauge (Thickness)", ["All"] + list(all_gauge)) if all_gauge else "All"
-qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup)) if all_qgroup else "All"
+    specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
+    rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
+    metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal)) if all_metal else "All"
+    
+    # 升級：使用文字輸入框處理厚度，支援單一數值 (如 1.5) 或範圍 (如 1.5~1.8)
+    # (Upgrade: Use text input for gauge, supports single value or range like 1.5~1.8)
+    gauge_input = st.sidebar.text_input("4. Order Gauge (ex: 1.5 or 1.5~1.8)", value="", help="Enter a specific number (1.5) or a range (1.5~1.8). Leave empty for All.")
+    
+    qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup)) if all_qgroup else "All"
 
-df_master_full = df.copy() 
+    df_master_full = df.copy() 
 
-if specs_filter != "All" and "Product_Spec" in df: df = df[df["Product_Spec"].astype(str) == specs_filter]
-if rolling != "All" and "Rolling_Type" in df: df = df[df["Rolling_Type"].astype(str) == rolling]
-if metal != "All" and "Metallic_Type" in df: df = df[df["Metallic_Type"].astype(str) == metal]
-if gauge != "All" and "Order_Gauge" in df: df = df[df["Order_Gauge"] == gauge]
-if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
+    if specs_filter != "All" and "Product_Spec" in df: df = df[df["Product_Spec"].astype(str) == specs_filter]
+    if rolling != "All" and "Rolling_Type" in df: df = df[df["Rolling_Type"].astype(str) == rolling]
+    if metal != "All" and "Metallic_Type" in df: df = df[df["Metallic_Type"].astype(str) == metal]
+    
+    # 智慧解析使用者輸入的厚度字串 (Smartly parse user input gauge string)
+    if gauge_input.strip() != "" and "Order_Gauge" in df:
+        df["temp_gauge_num"] = pd.to_numeric(df["Order_Gauge"], errors="coerce")
+        
+        if "~" in gauge_input or "-" in gauge_input:
+            # 處理範圍輸入 (Handle range input)
+            sep = "~" if "~" in gauge_input else "-"
+            try:
+                parts = gauge_input.split(sep)
+                min_g = float(parts[0].strip())
+                max_g = float(parts[1].strip())
+                df = df[(df["temp_gauge_num"] >= min_g - 0.001) & (df["temp_gauge_num"] <= max_g + 0.001)]
+            except ValueError:
+                st.sidebar.error("⚠️ Invalid gauge format. Please use '1.5' or '1.5~1.8'")
+        else:
+            # 處理單一數值輸入 (Handle single value input)
+            try:
+                target_g = float(gauge_input.strip())
+                df = df[(df["temp_gauge_num"] >= target_g - 0.001) & (df["temp_gauge_num"] <= target_g + 0.001)]
+            except ValueError:
+                st.sidebar.error("⚠️ Invalid gauge format. Please use '1.5' or '1.5~1.8'")
+                
+        df = df.drop(columns=["temp_gauge_num"])
+        
+    if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",

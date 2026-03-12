@@ -1255,10 +1255,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
             new_target_max = mu + target_k * sigma_imr
 
             rows = []
+            rows = []
             configs = [
                 ("🎯 Old Target Goal", spec_min, display_max, "-"),
                 ("🔴 M1: Standard (Historical)", m1_min, m1_max, std_dev),
                 ("🔵 M2: IQR (Robust)", m2_min, m2_max, sigma_clean),
+                ("🟢 M3: Smart Hybrid", m3_min, m3_max, "-"),
                 ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, sigma_imr),
                 (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-")
             ]

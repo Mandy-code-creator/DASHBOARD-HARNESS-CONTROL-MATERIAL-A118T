@@ -1121,10 +1121,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mu = data.mean()
             std_dev = data.std()
             
-            # 算法 M1 (Algorithm M1)
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             
-            # 算法 M2 (Algorithm M2)
             Q1 = data.quantile(0.25)
             Q3 = data.quantile(0.75)
             IQR = Q3 - Q1
@@ -1134,12 +1132,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if pd.isna(sigma_clean) or sigma_clean == 0: sigma_clean = std_dev
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
             
-            # 算法 M3 (Algorithm M3)
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
             
-            # 算法 M4 (Algorithm M4)
             mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
@@ -1147,28 +1143,27 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}"
 
+            # 儲存原始數值供後續動態評估使用 (Store raw values for dynamic evaluation later)
             all_groups_summary.append({
                 "Group": group_title,
                 "N": len(data),
                 "Current Spec": spec_str,
+                "M1_min": m1_min, "M1_max": m1_max,
+                "M2_min": m2_min, "M2_max": m2_max,
+                "M3_min": m3_min, "M3_max": m3_max,
+                "M4_min": m4_min, "M4_max": m4_max,
                 "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
                 "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
                 "M3: Smart Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
                 "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
             
-            # ==================================================================
-            # 綜合界限圖表與常態分佈曲線 (Combined Limits Chart with Normal Curve)
-            # ==================================================================
             from scipy.stats import norm
             fig, ax = plt.subplots(figsize=(12, 5))
             
-            # 繪製實際資料分佈直方圖 (Plot actual data histograms)
             ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
             if not data_lab.empty: ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
             
-            # 加入常態分佈曲線 (Add normal curve)
             min_cands = [m1_min, m4_min, spec_min, data.min()]
             max_cands = [m1_max, m4_max, display_max, data.max()]
             if not data_lab.empty:
@@ -1181,7 +1176,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             ax.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="#333333", lw=2, alpha=0.8, label=f"Normal Curve (σ={std_dev:.2f})")
             
-            # 繪製各方法控制界限 (Plot control limits for each method)
             ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
             ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
             ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
@@ -1196,14 +1190,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.set_title(f"Limits Comparison with Normal Distribution (σ={sigma_n})", fontsize=11, fontweight="bold")
             ax.legend(loc="upper right", fontsize="small")
             st.pyplot(fig)
-
-            # ==================================================================
-            # 預估機械性能表與匯出 (Mechanical Estimation Table & Export)
-            # ==================================================================
+            
             st.write("---") 
             st.markdown(f"#### 📌 Limit Summary & Mechanical Estimation")
             
-            # 從數據中獲取機械性能規格界限 (Get Mech Spec limits from data)
             spec_ts_min = sub["Standard TS min"].max() if "Standard TS min" in sub.columns else 0
             spec_ts_max = sub["Standard TS max"].min() if "Standard TS max" in sub.columns else 0
             spec_ys_min = sub["Standard YS min"].max() if "Standard YS min" in sub.columns else 0
@@ -1218,10 +1208,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 elif 0 < s_max < 9000: return f"≤ {s_max:.0f}"
                 return "-"
 
-            # 顯示規格基準 (Display Spec baseline)
             st.info(f"**Mechanical Specs Target:** TS: **{fmt_spec(spec_ts_min, spec_ts_max)}** | YS: **{fmt_spec(spec_ys_min, spec_ys_max)}** | EL: **{fmt_spec(spec_el_min, 0)}**")
 
-            # 使用實際數據訓練線性迴歸模型進行預測 (Train Linear Regression model from actual data for prediction)
             df_train = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
             has_model = False
             if len(df_train) >= 3:
@@ -1240,12 +1228,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 
             def eval_spec(v_min, v_max, s_min, s_max, is_el=False):
                 if v_min == 0 and v_max == 0: return "N/A"
-                # EL 只有下限 (min)。v_min 是對應最高硬度的最低 EL 點 (EL only has a lower bound)
                 if is_el: 
                     if pd.notna(s_min) and s_min > 0 and v_min < s_min: return "❌ Fail"
                     return "✅ Pass"
-                
-                # TS 與 YS (TS and YS)
                 if pd.notna(s_min) and s_min > 0 and v_min < s_min: return "❌ Fail"
                 if pd.notna(s_max) and 0 < s_max < 9000 and v_max > s_max: return "❌ Fail"
                 return "✅ Pass"
@@ -1254,7 +1239,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             new_target_min = mu - target_k * sigma_imr
             new_target_max = mu + target_k * sigma_imr
 
-            rows = []
             rows = []
             configs = [
                 ("🎯 Old Target Goal", spec_min, display_max, "-"),
@@ -1336,10 +1320,49 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown("## 📊 Summary of Control Limits")
-            df_total = pd.DataFrame(all_groups_summary)
             
-            styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
-                                      .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)'])
+            # --- 新增：動態評估設定面板 (NEW: Interactive Settings Panel for dynamic evaluation) ---
+            st.info("💡 **Evaluate Control Limits:** Choose a method and target bounds to see which groups pass or fail.")
+            c_eval1, c_eval2, c_eval3 = st.columns(3)
+            with c_eval1:
+                eval_method = st.selectbox("📌 Select Method to Evaluate:", 
+                                           ["M1: Standard", "M2: IQR (Robust)", "M3: Smart Hybrid", "M4: I-MR (Optimal)"], 
+                                           index=3)
+            with c_eval2:
+                eval_t_min = st.number_input("📉 Target LSL:", value=TARGET_MIN, step=0.5)
+            with c_eval3:
+                eval_t_max = st.number_input("📈 Target USL:", value=TARGET_MAX, step=0.5)
+                
+            df_raw = pd.DataFrame(all_groups_summary)
+            
+            # 依據選擇的方法與目標界限計算狀態 (Calculate status based on selected method and targets)
+            def eval_status(row):
+                if eval_method == "M1: Standard": c_min, c_max = row['M1_min'], row['M1_max']
+                elif eval_method == "M2: IQR (Robust)": c_min, c_max = row['M2_min'], row['M2_max']
+                elif eval_method == "M3: Smart Hybrid": c_min, c_max = row['M3_min'], row['M3_max']
+                else: c_min, c_max = row['M4_min'], row['M4_max']
+                
+                if c_min >= eval_t_min and c_max <= eval_t_max: return "✅ Pass (Target Met)"
+                elif c_min < eval_t_min and c_max > eval_t_max: return "🔴 Fail (Out of Bounds)"
+                elif c_min < eval_t_min: return "⚠️ Warning (Low Risk)"
+                elif c_max > eval_t_max: return "⚠️ Warning (High Risk)"
+                return "✅ Pass"
+                
+            df_raw["Eval Status"] = df_raw.apply(eval_status, axis=1)
+            
+            display_cols = ["Group", "N", "Current Spec", "M1: Standard", "M2: IQR (Robust)", "M3: Smart Hybrid", "M4: I-MR (Optimal)", "Eval Status"]
+            df_total = df_raw[display_cols]
+            
+            def style_summary_status(val):
+                if '🔴' in str(val): return 'color: #721c24; font-weight: bold; background-color: #f8d7da'
+                elif '⚠️' in str(val): return 'color: #856404; font-weight: bold; background-color: #fff3cd'
+                elif '✅' in str(val): return 'color: #155724; font-weight: bold; background-color: #d4edda'
+                return ''
+
+            # 自動將被選擇的評估方法整欄標亮 (Highlight the selected evaluation column)
+            styled_df = df_total.style.applymap(style_summary_status, subset=['Eval Status']) \
+                                      .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=[eval_method])
+            
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             # 轉換為 Excel 檔案並自動調整欄寬 (Convert to Excel file and auto-adjust column width)
@@ -1349,7 +1372,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 df_total.to_excel(writer, sheet_name='SPC_Summary', index=False)
                 worksheet = writer.sheets['SPC_Summary']
                 for idx, col_name in enumerate(df_total.columns):
-                    # 抓取標題或內容的最大長度來設定欄寬 (Get max length of header or content to set column width)
                     max_len = max(df_total[col_name].astype(str).map(len).max(), len(col_name)) + 2
                     worksheet.set_column(idx, idx, max_len)
 

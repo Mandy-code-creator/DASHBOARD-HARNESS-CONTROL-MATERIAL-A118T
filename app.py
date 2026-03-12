@@ -873,20 +873,47 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(filt[["TS", "YS", "EL"]].describe().T.style.format("{:.1f}"), use_container_width=True)
         else: st.error("No coils found.")
 
-    elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
+   elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
+        # 獲取當前組別的機械性能標準規範 (Get current mechanical standard specs for the group)
+        spec_ts_min = sub["Standard TS min"].max() if "Standard TS min" in sub.columns else 0
+        spec_ts_max = sub["Standard TS max"].min() if "Standard TS max" in sub.columns else 0
+        spec_ys_min = sub["Standard YS min"].max() if "Standard YS min" in sub.columns else 0
+        spec_ys_max = sub["Standard YS max"].min() if "Standard YS max" in sub.columns else 0
+        spec_el_min = sub["Standard EL min"].max() if "Standard EL min" in sub.columns else 0
+        
+        def fmt_spec(s_min, s_max):
+            if pd.isna(s_min): s_min = 0
+            if pd.isna(s_max): s_max = 0
+            if s_min > 0 and 0 < s_max < 9000: return f"{s_min:.0f} ~ {s_max:.0f}"
+            elif s_min > 0: return f"≥ {s_min:.0f}"
+            elif 0 < s_max < 9000: return f"≤ {s_max:.0f}"
+            return "N/A"
+
+        ts_spec_str = fmt_spec(spec_ts_min, spec_ts_max)
+        ys_spec_str = fmt_spec(spec_ys_min, spec_ys_max)
+        el_spec_str = fmt_spec(spec_el_min, 0)
+        
+        # 顯示當前規格基準供主管對照 (Display current spec baseline for manager's reference)
+        st.info(f"📋 **Current Standard Specs:** &nbsp;&nbsp;&nbsp; TS: **{ts_spec_str}** &nbsp;&nbsp;|&nbsp;&nbsp; YS: **{ys_spec_str}** &nbsp;&nbsp;|&nbsp;&nbsp; EL: **{el_spec_str}**")
+        
         c1, c2, c3 = st.columns(3)
-        r_ys_min = c1.number_input("Min YS", value=float(sub['YS'].min()) if not sub['YS'].isna().all() else 0.0, step=5.0, key=f"ymin_{i}")
-        r_ys_max = c1.number_input("Max YS", value=float(sub['YS'].max()) if not sub['YS'].isna().all() else 1000.0, step=5.0, key=f"ymax_{i}")
-        r_ts_min = c2.number_input("Min TS", value=float(sub['TS'].min()) if not sub['TS'].isna().all() else 0.0, step=5.0, key=f"tmin_{i}")
-        r_ts_max = c2.number_input("Max TS", value=float(sub['TS'].max()) if not sub['TS'].isna().all() else 1000.0, step=5.0, key=f"tmax_{i}")
+        # 設定輸入框，預設值帶入實際數據的極值 (Set input boxes, default to actual data extremes)
+        r_ts_min = c1.number_input("Min TS", value=float(sub['TS'].min()) if not sub['TS'].isna().all() else 0.0, step=5.0, key=f"tmin_{i}")
+        r_ts_max = c1.number_input("Max TS", value=float(sub['TS'].max()) if not sub['TS'].isna().all() else 1000.0, step=5.0, key=f"tmax_{i}")
+        
+        r_ys_min = c2.number_input("Min YS", value=float(sub['YS'].min()) if not sub['YS'].isna().all() else 0.0, step=5.0, key=f"ymin_{i}")
+        r_ys_max = c2.number_input("Max YS", value=float(sub['YS'].max()) if not sub['YS'].isna().all() else 1000.0, step=5.0, key=f"ymax_{i}")
+        
         r_el_min = c3.number_input("Min EL", value=float(sub['EL'].min()) if not sub['EL'].isna().all() else 0.0, step=1.0, key=f"emin_{i}")
         r_el_max = c3.number_input("Max EL", value=float(sub['EL'].max()) if not sub['EL'].isna().all() else 100.0, step=1.0, key=f"emax_{i}")
 
         filtered = sub[(sub['YS'] >= r_ys_min) & (sub['YS'] <= r_ys_max) & (sub['TS'] >= r_ts_min) & (sub['TS'] <= r_ts_max) & (sub['EL'] >= r_el_min) & (sub['EL'] <= r_el_max)]
+        
         if not filtered.empty:
-            st.success(f"✅ Target Hardness: **{filtered['Hardness_LINE'].min():.1f} ~ {filtered['Hardness_LINE'].max():.1f} HRB**")
-            st.dataframe(filtered[['COIL_NO','Hardness_LINE','YS','TS','EL']], height=300)
-        else: st.error("❌ No coils found matching these specs.")
+            st.success(f"✅ Found **{len(filtered)}** coils. Optimal Hardness Range: **{filtered['Hardness_LINE'].min():.1f} ~ {filtered['Hardness_LINE'].max():.1f} HRB**")
+            st.dataframe(filtered[['COIL_NO','Hardness_LINE','TS','YS','EL']].style.format("{:.1f}", subset=['Hardness_LINE', 'TS', 'YS', 'EL']), use_container_width=True, hide_index=True)
+        else: 
+            st.error("❌ No coils found matching these target parameters.")
 
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🧮 AI Prediction Engine: {group_title}")

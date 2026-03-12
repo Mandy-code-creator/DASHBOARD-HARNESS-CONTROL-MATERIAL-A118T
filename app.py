@@ -1141,21 +1141,23 @@ for i, (_, g) in enumerate(valid.iterrows()):
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
+            # --- 計算目標界限 (Calculate Target Limits) ---
+            target_k = 1.0 
+            new_target_min = mu - target_k * sigma_imr
+            new_target_max = mu + target_k * sigma_imr
+
             spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}"
 
-            # 儲存原始數值供後續動態評估使用 (Store raw values for dynamic evaluation later)
             all_groups_summary.append({
                 "Group": group_title,
                 "N": len(data),
                 "Current Spec": spec_str,
-                "M1_min": m1_min, "M1_max": m1_max,
-                "M2_min": m2_min, "M2_max": m2_max,
-                "M3_min": m3_min, "M3_max": m3_max,
-                "M4_min": m4_min, "M4_max": m4_max,
                 "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
                 "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
                 "M3: Smart Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
                 "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
+                "New Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}",
+                "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
             
             from scipy.stats import norm

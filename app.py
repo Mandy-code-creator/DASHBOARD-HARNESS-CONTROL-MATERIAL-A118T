@@ -245,32 +245,50 @@ if gauge_input.strip() != "" and "Order_Gauge" in df:
     
 if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
 
-view_mode = st.sidebar.radio(
-    "📊 View Mode",
-    [
-        "📋 Data Inspection",
-        "📊 Executive KPI Dashboard",
-        "🚀 Global Summary Dashboard",
-        "📉 Hardness Analysis (Trend & Dist)",
-        "🔗 Correlation: Hardness vs Mech Props",
-        "⚙️ Mech Props Analysis",
-        "🔍 Lookup: Hardness Range → Actual Mech Props",
-        "🎯 Find Target Hardness (Reverse Lookup)",
-        "🧮 Predict TS/YS/EL from Std Hardness",
-        "🎛️ Control Limit Calculator (Compare 3 Methods)",
-        "👑 Master Dictionary Export",
-    ]
+# ================================
+# NAVIGATION MENU (GROUPED)
+# ================================
+st.sidebar.markdown("---")
+st.sidebar.header("🧭 NAVIGATION")
+
+# 第一層：選擇主要類別 (First Level: Select Main Category)
+menu_category = st.sidebar.selectbox(
+    "📂 Select Category",
+    ["📊 Dashboards & KPIs", "🔬 Deep Analytics", "🛠️ Tools & AI Models"]
 )
 
-GROUP_COLS = [c for c in ["Product_Spec", "Rolling_Type", "Metallic_Type", "Quality_Group", "Material", "Order_Gauge"] if c in df.columns]
-if not GROUP_COLS: GROUP_COLS = ["Material"]
+st.sidebar.markdown("---")
 
-cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
-valid = cnt[cnt["N_Coils"] >= 1] 
-
-if valid.empty:
-    st.warning("⚠️ No valid coils found for the current filter. Please adjust the sidebar.")
-    st.stop()
+# 第二層：根據類別顯示對應的視圖 (Second Level: Show specific views based on category)
+if menu_category == "📊 Dashboards & KPIs":
+    view_mode = st.sidebar.radio(
+        "📍 Select View",
+        [
+            "📊 Executive KPI Dashboard",
+            "🚀 Global Summary Dashboard",
+            "📋 Data Inspection"
+        ]
+    )
+elif menu_category == "🔬 Deep Analytics":
+    view_mode = st.sidebar.radio(
+        "📍 Select View",
+        [
+            "📉 Hardness Analysis (Trend & Dist)",
+            "🔗 Correlation: Hardness vs Mech Props",
+            "⚙️ Mech Props Analysis"
+        ]
+    )
+else:
+    view_mode = st.sidebar.radio(
+        "📍 Select View",
+        [
+            "🔍 Lookup: Hardness Range → Actual Mech Props",
+            "🎯 Find Target Hardness (Reverse Lookup)",
+            "🧮 Predict TS/YS/EL from Std Hardness",
+            "🎛️ Control Limit Calculator (Compare 3 Methods)",
+            "👑 Master Dictionary Export"
+        ]
+    )
 # ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================

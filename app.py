@@ -180,9 +180,17 @@ df = df.dropna(subset=["Hardness_LINE"])
 
 # ================================
 # ================================
-# SIDEBAR FILTER
 # ================================
-st.sidebar.header("🎛 FILTER (A118T & Specs)")
+# SIDEBAR FILTER & SETTINGS
+# ================================
+st.sidebar.header("🎛 GLOBAL SETTINGS")
+st.sidebar.markdown("**🎯 Target Hardness (HRB)**")
+c_t1, c_t2 = st.sidebar.columns(2)
+TARGET_MIN = c_t1.number_input("Target Min", value=85.0, step=0.5, format="%.1f")
+TARGET_MAX = c_t2.number_input("Target Max", value=90.0, step=0.5, format="%.1f")
+
+st.sidebar.markdown("---")
+st.sidebar.header("🔍 DATA FILTER")
 
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
@@ -193,57 +201,50 @@ all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolli
 all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
 all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
 
-# 獲取所有可用的厚度列表供提示使用 (Get all available gauges for hint display)
 all_gauge = []
 if "Order_Gauge" in df.columns:
     valid_gauges = pd.to_numeric(df["Order_Gauge"], errors="coerce").dropna()
     if not valid_gauges.empty:
         all_gauge = sorted(valid_gauges.unique())
 
-specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
-rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
-metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal)) if all_metal else "All"
+specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs))
+rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling))
+metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal))
 
-# 升級：使用文字輸入框處理厚度，並在下方顯示可用數值提示
-# (Upgrade: Text input for gauge, with available values hint below)
-gauge_input = st.sidebar.text_input("4. Order Gauge (ex: 1.5 or 1.5~1.8)", value="", help="Enter a specific number (1.5) or a range (1.5~1.8). Leave empty for All.")
+gauge_input = st.sidebar.text_input("4. Order Gauge (ex: 1.5 or 1.5~1.8)", value="")
 if all_gauge:
-    gauge_hint = ", ".join([f"{g:.2f}" for g in all_gauge])
+    gauge_hint = ", ".join([f"{g:.2f}" for g in all_gauge[:10]]) + ("..." if len(all_gauge) > 10 else "")
     st.sidebar.caption(f"💡 **Available:** {gauge_hint}")
 
-qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup)) if all_qgroup else "All"
+qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup))
 
+# 應用過濾邏輯 (Apply filtering logic)
 df_master_full = df.copy() 
 
-if specs_filter != "All" and "Product_Spec" in df: df = df[df["Product_Spec"].astype(str) == specs_filter]
-if rolling != "All" and "Rolling_Type" in df: df = df[df["Rolling_Type"].astype(str) == rolling]
-if metal != "All" and "Metallic_Type" in df: df = df[df["Metallic_Type"].astype(str) == metal]
+if specs_filter != "All": df = df[df["Product_Spec"].astype(str) == specs_filter]
+if rolling != "All": df = df[df["Rolling_Type"].astype(str) == rolling]
+if metal != "All": df = df[df["Metallic_Type"].astype(str) == metal]
 
-# 智慧解析使用者輸入的厚度字串 (Smartly parse user input gauge string)
 if gauge_input.strip() != "" and "Order_Gauge" in df:
     df["temp_gauge_num"] = pd.to_numeric(df["Order_Gauge"], errors="coerce")
-    
     if "~" in gauge_input or "-" in gauge_input:
-        # 處理範圍輸入 (Handle range input)
         sep = "~" if "~" in gauge_input else "-"
         try:
             parts = gauge_input.split(sep)
-            min_g = float(parts[0].strip())
-            max_g = float(parts[1].strip())
-            df = df[(df["temp_gauge_num"] >= min_g - 0.001) & (df["temp_gauge_num"] <= max_g + 0.001)]
-        except ValueError:
-            st.sidebar.error("⚠️ Invalid gauge format. Please use '1.5' or '1.5~1.8'")
+            df = df[(df["temp_gauge_num"] >= float(parts[0])) & (df["temp_gauge_num"] <= float(parts[1]))]
+        except: st.sidebar.error("⚠️ Invalid gauge format")
     else:
-        # 處理單一數值輸入 (Handle single value input)
-        try:
-            target_g = float(gauge_input.strip())
-            df = df[(df["temp_gauge_num"] >= target_g - 0.001) & (df["temp_gauge_num"] <= target_g + 0.001)]
-        except ValueError:
-            st.sidebar.error("⚠️ Invalid gauge format. Please use '1.5' or '1.5~1.8'")
-            
+        try: df = df[(df["temp_gauge_num"] >= float(gauge_input) - 0.001) & (df["temp_gauge_num"] <= float(gauge_input) + 0.001)]
+        except: st.sidebar.error("⚠️ Invalid gauge format")
     df = df.drop(columns=["temp_gauge_num"])
     
-if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
+if qgroup != "All": df = df[df["Quality_Group"].astype(str) == qgroup]
+
+# 重要：在導航前先定義 valid 變數 (CRITICAL: Define 'valid' variable before Navigation)
+GROUP_COLS = [c for c in ["Product_Spec", "Rolling_Type", "Metallic_Type", "Quality_Group", "Material", "Order_Gauge"] if c in df.columns]
+if not GROUP_COLS: GROUP_COLS = ["Material"]
+cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
+valid = cnt[cnt["N_Coils"] >= 1]
 
 # ================================
 # NAVIGATION MENU (GROUPED)
@@ -251,44 +252,18 @@ if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype
 st.sidebar.markdown("---")
 st.sidebar.header("🧭 NAVIGATION")
 
-# 第一層：選擇主要類別 (First Level: Select Main Category)
-menu_category = st.sidebar.selectbox(
-    "📂 Select Category",
-    ["📊 Dashboards & KPIs", "🔬 Deep Analytics", "🛠️ Tools & AI Models"]
-)
+menu_category = st.sidebar.selectbox("📂 Select Category", ["📊 Dashboards & KPIs", "🔬 Deep Analytics", "🛠️ Tools & AI Models"])
 
-st.sidebar.markdown("---")
-
-# 第二層：根據類別顯示對應的視圖 (Second Level: Show specific views based on category)
 if menu_category == "📊 Dashboards & KPIs":
-    view_mode = st.sidebar.radio(
-        "📍 Select View",
-        [
-            "📊 Executive KPI Dashboard",
-            "🚀 Global Summary Dashboard",
-            "📋 Data Inspection"
-        ]
-    )
+    view_mode = st.sidebar.radio("📍 Select View", ["📊 Executive KPI Dashboard", "🚀 Global Summary Dashboard", "📋 Data Inspection"])
 elif menu_category == "🔬 Deep Analytics":
-    view_mode = st.sidebar.radio(
-        "📍 Select View",
-        [
-            "📉 Hardness Analysis (Trend & Dist)",
-            "🔗 Correlation: Hardness vs Mech Props",
-            "⚙️ Mech Props Analysis"
-        ]
-    )
+    view_mode = st.sidebar.radio("📍 Select View", ["📉 Hardness Analysis (Trend & Dist)", "🔗 Correlation: Hardness vs Mech Props", "⚙️ Mech Props Analysis"])
 else:
-    view_mode = st.sidebar.radio(
-        "📍 Select View",
-        [
-            "🔍 Lookup: Hardness Range → Actual Mech Props",
-            "🎯 Find Target Hardness (Reverse Lookup)",
-            "🧮 Predict TS/YS/EL from Std Hardness",
-            "🎛️ Control Limit Calculator (Compare 3 Methods)",
-            "👑 Master Dictionary Export"
-        ]
-    )
+    view_mode = st.sidebar.radio("📍 Select View", ["🔍 Lookup: Hardness Range → Actual Mech Props", "🎯 Find Target Hardness (Reverse Lookup)", "🧮 Predict TS/YS/EL from Std Hardness", "🎛️ Control Limit Calculator (Compare 3 Methods)", "👑 Master Dictionary Export"])
+
+if valid.empty:
+    st.warning("⚠️ No valid coils found for the current filter. Please adjust the sidebar.")
+    st.stop()
 # ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================

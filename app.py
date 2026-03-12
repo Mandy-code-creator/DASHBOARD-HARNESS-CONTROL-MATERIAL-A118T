@@ -730,13 +730,35 @@ for i, (_, g) in enumerate(valid.iterrows()):
             x = np.arange(len(summary))
             fig, ax = plt.subplots(figsize=(15,6))
             
-            def p_prop(x, y, ymin, ymax, c, lbl, m):
-                ax.plot(x, y, marker=m, color=c, label=lbl, lw=2)
-                ax.fill_between(x, ymin, ymax, color=c, alpha=0.1)
+            # --- 升級：建立副 Y 軸來獨立顯示 EL，避免擠在圖表底部 (Upgrade: Create secondary Y-axis for EL) ---
+            ax2 = ax.twinx()
             
-            p_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS", "o")
-            p_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
-            p_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
+            def p_prop(ax_obj, x, y, ymin, ymax, c, lbl, m):
+                ax_obj.plot(x, y, marker=m, color=c, label=lbl, lw=2)
+                ax_obj.fill_between(x, ymin, ymax, color=c, alpha=0.1)
+            
+            # 繪製 TS 和 YS 在主軸 (Plot TS and YS on primary axis)
+            p_prop(ax, x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS Actual", "o")
+            p_prop(ax, x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS Actual", "s")
+            
+            # 繪製 EL 在副軸 (Plot EL on secondary axis)
+            p_prop(ax2, x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL Actual", "^")
+
+            # --- 獲取規格界限 (Get Spec Limits) ---
+            g_ts_min = summary["Std_TS_min"].max()
+            g_ts_max = summary["Std_TS_max"].min()
+            g_ys_min = summary["Std_YS_min"].max()
+            g_ys_max = summary["Std_YS_max"].min()
+            g_el_min = summary["Std_EL_min"].max()
+
+            # --- 繪製規格界限線 (Draw Spec Limit Lines) ---
+            if pd.notna(g_ts_min) and g_ts_min > 0: ax.axhline(g_ts_min, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS LSL ({g_ts_min:.0f})")
+            if pd.notna(g_ts_max) and 0 < g_ts_max < 9000: ax.axhline(g_ts_max, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS USL ({g_ts_max:.0f})")
+            
+            if pd.notna(g_ys_min) and g_ys_min > 0: ax.axhline(g_ys_min, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS LSL ({g_ys_min:.0f})")
+            if pd.notna(g_ys_max) and 0 < g_ys_max < 9000: ax.axhline(g_ys_max, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS USL ({g_ys_max:.0f})")
+            
+            if pd.notna(g_el_min) and g_el_min > 0: ax2.axhline(g_el_min, color="#ff7f0e", linestyle=":", lw=2, alpha=0.6, label=f"EL LSL ({g_el_min:.0f})")
 
             for j, row in enumerate(summary.itertuples()):
                 ts_min, ts_max = row.Std_TS_min, row.Std_TS_max
@@ -749,10 +771,21 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 
                 ax.annotate(f"{row.TS_mean:.0f}" + (" ❌" if ts_fail else ""), (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ts_fail else "#1f77b4")
                 ax.annotate(f"{row.YS_mean:.0f}" + (" ❌" if ys_fail else ""), (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ys_fail else "#2ca02c")
-                ax.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""), (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color="red" if el_fail else "#ff7f0e", fontweight=("bold" if el_fail else "normal"))
+                ax2.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""), (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color="red" if el_fail else "#ff7f0e", fontweight=("bold" if el_fail else "normal"))
 
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
-            ax.set_title("Hardness vs Mechanical Properties", fontweight="bold"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)
+            ax.set_ylabel("Strength (MPa)", fontweight="bold")
+            ax2.set_ylabel("Elongation (%)", fontweight="bold", color="#ff7f0e")
+            ax.set_title("Hardness vs Mechanical Properties with Spec Limits", fontweight="bold")
+            
+            # 合併圖例 (Combine legends to the right side)
+            lines_1, labels_1 = ax.get_legend_handles_labels()
+            lines_2, labels_2 = ax2.get_legend_handles_labels()
+            ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc="center left", bbox_to_anchor=(1.08, 0.5))
+            
+            ax.grid(True, ls="--", alpha=0.5)
+            fig.tight_layout() # 防止圖例被裁切 (Prevent legend from being cut off)
+            st.pyplot(fig)
 
             specs_str = f"Specs: {', '.join(str(x) for x in sub['Product_Spec'].dropna().unique())}" if 'Product_Spec' in sub.columns else "Specs: N/A"
 
@@ -824,7 +857,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     writer.sheets[s].set_column('A:A', 25); writer.sheets[s].set_column('B:C', 15); writer.sheets[s].set_column('D:Z', 12) 
             
             st.download_button("📥 Export Binning Report (Excel)", data=output.getvalue(), file_name=f"Hardness_Bin_Report_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
     elif view_mode == "⚙️ Mech Props Analysis":
         if i == 0: ts_summary, ys_summary, el_summary = [], [], []
 

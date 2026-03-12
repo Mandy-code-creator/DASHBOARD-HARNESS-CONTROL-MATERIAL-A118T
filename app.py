@@ -191,13 +191,23 @@ all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolli
 all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
 all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
 
+# 獲取所有可用的厚度列表供提示使用 (Get all available gauges for hint display)
+all_gauge = []
+if "Order_Gauge" in df.columns:
+    valid_gauges = pd.to_numeric(df["Order_Gauge"], errors="coerce").dropna()
+    if not valid_gauges.empty:
+        all_gauge = sorted(valid_gauges.unique())
+
 specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs)) if all_specs else "All"
 rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling)) if all_rolling else "All"
 metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal)) if all_metal else "All"
 
-# 升級：使用文字輸入框處理厚度，支援單一數值 (如 1.5) 或範圍 (如 1.5~1.8)
-# (Upgrade: Use text input for gauge, supports single value or range like 1.5~1.8)
+# 升級：使用文字輸入框處理厚度，並在下方顯示可用數值提示
+# (Upgrade: Text input for gauge, with available values hint below)
 gauge_input = st.sidebar.text_input("4. Order Gauge (ex: 1.5 or 1.5~1.8)", value="", help="Enter a specific number (1.5) or a range (1.5~1.8). Leave empty for All.")
+if all_gauge:
+    gauge_hint = ", ".join([f"{g:.2f}" for g in all_gauge])
+    st.sidebar.caption(f"💡 **Available:** {gauge_hint}")
 
 qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup)) if all_qgroup else "All"
 
@@ -232,7 +242,6 @@ if gauge_input.strip() != "" and "Order_Gauge" in df:
     df = df.drop(columns=["temp_gauge_num"])
     
 if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
-view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
         "📋 Data Inspection",

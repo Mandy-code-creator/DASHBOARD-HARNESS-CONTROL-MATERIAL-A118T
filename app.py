@@ -50,10 +50,15 @@ def add_custom_css():
 add_custom_css()
 
 # ================================
-# GLOBAL VARIABLES (TARGET 85-90)
+# DYNAMIC TARGET SETTINGS (SIDEBAR)
 # ================================
-TARGET_MIN = 85.0
-TARGET_MAX = 90.0
+st.sidebar.header("⚙️ GLOBAL SETTINGS")
+st.sidebar.markdown("**🎯 Target Hardness (HRB)**")
+c_t1, c_t2 = st.sidebar.columns(2)
+# 允許使用者動態調整目標硬度 (Allow users to dynamically adjust target hardness)
+TARGET_MIN = c_t1.number_input("Target Min", value=85.0, step=0.5, format="%.1f")
+TARGET_MAX = c_t2.number_input("Target Max", value=90.0, step=0.5, format="%.1f")
+st.sidebar.markdown("---")
 
 # ================================
 # LOAD & CLEAN DATA
@@ -124,12 +129,12 @@ if "COIL_NO" not in df.columns: df["COIL_NO"] = df.index
 if "Material" not in df.columns: df["Material"] = "A118T"
 if "Product_Spec" not in df.columns: df["Product_Spec"] = "N/A"
 
-# 專屬篩選 A118T 及指定規格 (Exclusive filter for A118T & requested specs)
-allowed_keywords = "A118T|2657/G01T|N SZACC|NSZACC"
-df = df[
-    (df["Material"].astype(str).str.upper().str.contains(allowed_keywords, regex=True)) | 
-    (df.get("Product_Spec", pd.Series(dtype=str)).astype(str).str.upper().str.contains(allowed_keywords, regex=True))
-].copy()
+# 移除硬編碼限制，允許讀取 Google Sheet 中的所有鋼種與規格 
+# (Remove hardcoded limits to allow loading all materials/specs from Google Sheet)
+
+if df.empty:
+    st.error("⚠️ No valid data found in the Google Sheet.")
+    st.stop()
 
 if df.empty:
     st.error("⚠️ No data found for A118T, 2657/G01T, or N SZACC.")

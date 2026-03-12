@@ -88,7 +88,10 @@ if date_col:
     if pd.notna(min_date) and pd.notna(max_date):
         data_period_str = f"{min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}"
 
-current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+# 設定台灣時區 (UTC+8) (Set Taiwan timezone UTC+8)
+tz_tw = timezone(timedelta(hours=8))
+current_time = datetime.now(tz_tw).strftime("%Y-%m-%d %H:%M")
+
 st.markdown(f"""
 <div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
     <strong>🕒 Report Generated:</strong> {current_time} &nbsp;&nbsp;|&nbsp;&nbsp; 

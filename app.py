@@ -592,74 +592,25 @@ for i, (_, g) in enumerate(valid.iterrows()):
     st.markdown(f"**Coils:** {sub['COIL_NO'].nunique()} | **Std Limit:** {lo:.1f} ~ {hi:.1f}")
         
     if view_mode == "📋 Data Inspection":
-        def highlight_ng_rows(row): return ['background-color: #ffe6e6'] * len(row) if row['NG'] else [''] * len(row)
-        num_cols = sub.select_dtypes(include=[np.number]).columns.tolist()
-        st.dataframe(sub.style.format("{:.0f}", subset=[c for c in num_cols if c not in ['Limit_Min', 'Limit_Max', 'Order_Gauge']]).apply(highlight_ng_rows, axis=1), use_container_width=True)
-
-    elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
-        tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
+        # 移除 Rolling_Type 欄位 (Remove Rolling_Type column for cleaner view)
+        display_df = sub.drop(columns=["Rolling_Type"]) if "Rolling_Type" in sub.columns else sub.copy()
         
-        with tab_trend:
-            x = np.arange(1, len(sub)+1)
-            fig, ax = plt.subplots(figsize=(10, 4.5))
-            if "Hardness_LAB" in sub.columns and not sub["Hardness_LAB"].isna().all(): ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
-            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
-            
-            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Std LSL={lo}")
-            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Std USL={hi}")
-            ax.axhline(TARGET_MIN, linestyle="--", linewidth=2, color="green", label=f"Target LSL={TARGET_MIN}")
-            ax.axhline(TARGET_MAX, linestyle="--", linewidth=2, color="green", label=f"Target USL={TARGET_MAX}")
-            ax.fill_between(x, TARGET_MIN, TARGET_MAX, color="green", alpha=0.1, label="Target Zone")
-            
-            ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
-            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=5)
-            plt.tight_layout(); st.pyplot(fig)
-            
-        with tab_dist:
-            line = sub["Hardness_LINE"].dropna()
-            lab = sub["Hardness_LAB"].dropna() if "Hardness_LAB" in sub.columns else pd.Series(dtype=float)
-            
-            if len(line) < 5: st.warning("⚠️ At least 5 coils are required for distribution analysis.")
+        # 根據 NG 標籤標記異常行 (Highlight NG rows in red)
+        def highlight_ng_rows(row): 
+            return ['background-color: #ffe6e6'] * len(row) if row.get('NG', False) else [''] * len(row)
+        
+        num_cols = display_df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # 設定數值格式：硬度保留 1 位小數，其他數值（包含 Limit_Min/Max 等）皆去除小數點
+        # (Format numeric columns: Hardness keeps 1 decimal, Limit_Min/Max and others keep 0 decimals)
+        fmt = {}
+        for c in num_cols:
+            if c in ["Hardness_LINE", "Hardness_LAB"]:
+                fmt[c] = "{:.1f}"
             else:
-                spc_line = None
-                if len(line) >= 2 and line.std(ddof=1) > 0:
-                    mean, std = line.mean(), line.std(ddof=1)
-                    cp = (hi - lo) / (6 * std)
-                    ca = ((mean - (hi + lo) / 2) / ((hi - lo) / 2)) * 100
-                    cpu, cpl = (hi - mean) / (3 * std), (mean - lo) / (3 * std)
-                    spc_line = (mean, std, cp, ca, min(cpu, cpl))
-
-                mean_line, std_line = line.mean(), line.std(ddof=1)
+                fmt[c] = "{:.0f}"
                 
-                vals = [line.min(), line.max(), lo, hi, TARGET_MIN, TARGET_MAX]
-                if not lab.empty: vals.extend([lab.min(), lab.max()])
-                x_min, x_max = min(vals) - 2, max(vals) + 2
-                
-                fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
-                ax_dist.hist(line, bins=np.linspace(x_min, x_max, 30), density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
-                if not lab.empty: ax_dist.hist(lab, bins=np.linspace(x_min, x_max, 30), density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
-                
-                if std_line > 0:
-                    xs = np.linspace(x_min, x_max, 400)
-                    ax_dist.plot(xs, (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2), linewidth=2.5, color="#b25e00", label="LINE Fit")
-                
-                ax_dist.axvline(lo, linestyle="--", linewidth=2, color="red", label="Std LSL")
-                ax_dist.axvline(hi, linestyle="--", linewidth=2, color="red", label="Std USL")
-                ax_dist.axvline(TARGET_MIN, linestyle=":", linewidth=2, color="green", label="Target LSL")
-                ax_dist.axvline(TARGET_MAX, linestyle=":", linewidth=2, color="green", label="Target USL")
-                ax_dist.axvspan(TARGET_MIN, TARGET_MAX, color="green", alpha=0.1)
-
-                ax_dist.set_xlim(x_min, x_max)
-                ax_dist.set_title("Hardness Distribution (LINE vs LAB)", weight="bold")
-                ax_dist.legend(); ax_dist.grid(alpha=0.3)
-                st.pyplot(fig_dist)
-
-                if spc_line:
-                    mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
-                    eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
-                    color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
-                    df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
-                    st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
+        st.dataframe(display_df.style.format(fmt).apply(highlight_ng_rows, axis=1), use_container_width=True)
 
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
         if i == 0: corr_bin_summary = []

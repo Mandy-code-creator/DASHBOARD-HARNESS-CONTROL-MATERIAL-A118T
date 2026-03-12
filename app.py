@@ -568,15 +568,14 @@ if view_mode == "🚀 Global Summary Dashboard":
 
 # ==============================================================================
 # ==============================================================================
-# ==============================================================================
-# 👑 MASTER DICTIONARY EXPORT (FULL SPECS & TARGETS)
+# 👑 MASTER DICTIONARY EXPORT (VIEW ON SCREEN & DOWNLOAD)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary (A118T)")
-    st.info("💡 **Comprehensive Export:** This file includes Proposed Control Limits (M4), Proposed Target Zones (1σ), and Original Mechanical Specifications for full traceability.")
+    st.info("💡 **Interactive View & Export:** Review the logically grouped limits directly on the screen below, then download the formatted Excel file for your records.")
     
-    if st.button("🚀 Generate & Export Comprehensive Dictionary", type="primary"):
+    if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         master_data = []
         clean_master_df = df_master_full.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
         
@@ -623,39 +622,68 @@ if view_mode == "👑 Master Dictionary Export":
             master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(GROUP_COLS)}
             master_dict.update({
                 "N Coils": len(group),
+                "Current Hardness Spec": f"{group['Limit_Min'].max():.1f}~{group['Limit_Max'].min():.1f}",
                 "Proposed Control Limit (3σ)": f"{c_min:.1f} ~ {c_max:.1f}",
                 "🎯 Proposed Target Zone (1σ)": f"{t_min:.1f} ~ {t_max:.1f}",
-                "Exp. TS (at Target)": f"{int(m_ts.predict([[t_min]])[0])}~{int(m_ts.predict([[t_max]])[0])}",
-                "Exp. YS (at Target)": f"{int(m_ys.predict([[t_min]])[0])}~{int(m_ys.predict([[t_max]])[0])}",
-                "Exp. EL (at Target)": f"{min(m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]):.1f}% ~ {max(m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]):.1f}%",
+                
                 "Spec: TS": fmt_s(s_ts_min, s_ts_max),
+                "Exp. TS (at Target)": f"{int(m_ts.predict([[t_min]])[0])}~{int(m_ts.predict([[t_max]])[0])}",
+                
                 "Spec: YS": fmt_s(s_ys_min, s_ys_max),
+                "Exp. YS (at Target)": f"{int(m_ys.predict([[t_min]])[0])}~{int(m_ys.predict([[t_max]])[0])}",
+                
                 "Spec: EL": f"≥ {s_el_min:.1f}%" if s_el_min > 0 else "-",
-                "Current Hardness Spec": f"{group['Limit_Min'].max():.1f}~{group['Limit_Max'].min():.1f}"
+                "Exp. EL (at Target)": f"{min(m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]):.1f}% ~ {max(m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]):.1f}%"
             })
             master_data.append(master_dict)
         
         if master_data:
             df_out = pd.DataFrame(master_data)
+            
+            # 強制指定欄位排序 (Force column ordering for logical flow)
+            ordered_cols = GROUP_COLS + [
+                "N Coils", 
+                "Current Hardness Spec", "Proposed Control Limit (3σ)", "🎯 Proposed Target Zone (1σ)",
+                "Spec: TS", "Exp. TS (at Target)",
+                "Spec: YS", "Exp. YS (at Target)",
+                "Spec: EL", "Exp. EL (at Target)"
+            ]
+            final_cols = [c for c in ordered_cols if c in df_out.columns]
+            df_out = df_out[final_cols]
+            
+            # --- 1. 在畫面上直接顯示美化後的預覽表格 (Show styled dataframe on screen) ---
+            st.markdown("### 👁️ Preview Master Dictionary")
+            
+            # 套用與 Excel 相同的顏色邏輯 (Apply the same color logic as Excel to the Streamlit dataframe)
+            styled_df = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in final_cols if "Spec:" in c or "Current Hardness Spec" in c]) \
+                                    .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in final_cols if "Target" in c or "Exp." in c]) \
+                                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=["Proposed Control Limit (3σ)"])
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            
+            # --- 2. 準備 Excel 匯出檔案 (Prepare Excel Export file) ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, sheet_name='Master_Specs', index=False)
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Specs']
                 
-                # 美化格式 (Beautification)
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
-                target_fmt = workbook.add_format({'bg_color': '#D9EAD3', 'bold': True, 'border': 1})
-                spec_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'italic': True, 'border': 1})
+                # Excel 美化格式設定 (Excel beautification settings)
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                target_fmt = workbook.add_format({'bg_color': '#D9EAD3', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                spec_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'italic': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                
+                worksheet.set_row(0, 30) 
                 
                 for col_num, value in enumerate(df_out.columns.values):
                     fmt = header_fmt
-                    if "Target" in value: fmt = target_fmt
-                    if "Spec" in value: fmt = spec_fmt
+                    if "Target" in value or "Exp." in value: fmt = target_fmt
+                    if "Spec:" in value or "Current Hardness Spec" in value: fmt = spec_fmt
                     
                     worksheet.write(0, col_num, value, fmt)
-                    worksheet.set_column(col_num, col_num, 20)
+                    worksheet.set_column(col_num, col_num, max(12, len(value) * 0.8))
             
+            st.markdown("### 📥 Download Report")
             st.success(f"✅ Full Master Dictionary created for {len(master_data)} groups!")
             st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{datetime.now().strftime('%Y%m%d')}.xlsx")
     st.stop()

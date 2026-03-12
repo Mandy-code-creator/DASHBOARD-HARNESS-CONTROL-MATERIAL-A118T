@@ -1086,7 +1086,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric(f"Elongation (EL) - {el_stat}", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
             c3.caption(f"**Spec:** {el_spec} | **R²:** {model_metrics['EL']['r2']:.2f}")
 
-   elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
+    elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
         # --- 1. 在視圖頂部顯示一次說明 (Display explanation once at the top) ---
         if i == 0:

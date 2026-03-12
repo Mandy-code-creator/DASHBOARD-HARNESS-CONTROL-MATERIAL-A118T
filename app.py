@@ -182,6 +182,8 @@ df = df.dropna(subset=["Hardness_LINE"])
 # ================================
 # SIDEBAR FILTER
 # ================================
+st.sidebar.header("🎛 FILTER (A118T & Specs)")
+
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
@@ -242,6 +244,8 @@ if gauge_input.strip() != "" and "Order_Gauge" in df:
     df = df.drop(columns=["temp_gauge_num"])
     
 if qgroup != "All" and "Quality_Group" in df: df = df[df["Quality_Group"].astype(str) == qgroup]
+
+view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
         "📋 Data Inspection",
@@ -267,7 +271,6 @@ valid = cnt[cnt["N_Coils"] >= 1]
 if valid.empty:
     st.warning("⚠️ No valid coils found for the current filter. Please adjust the sidebar.")
     st.stop()
-
 # ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================

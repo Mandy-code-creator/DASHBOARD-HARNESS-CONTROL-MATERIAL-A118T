@@ -693,6 +693,7 @@ if view_mode == "👑 Master Dictionary Export":
             st.success(f"✅ Full Master Dictionary created for {len(master_data)} groups!")
             st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
     st.stop()
+    
 # ==============================================================================
 # MAIN LOOP FOR ALL OTHER VIEWS 
 # ==============================================================================

@@ -1,5 +1,6 @@
 # ================================
 # FULL STREAMLIT APP – A118T ULTIMATE STABLE VERSION
+# (Order_Gauge grouping removed per manager request)
 # ================================
 
 import streamlit as st
@@ -28,7 +29,6 @@ def add_custom_css():
         [data-testid="stSidebar"] { background-color: #ffffff; box-shadow: 2px 0 5px rgba(0,0,0,0.05); border-right: none; }
         h1, h2, h3 { color: #2c3e50 !important; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 600; }
         
-        /* 調整指標卡片字體大小與換行以避免截斷 (Adjust metric card font size and wrap to prevent truncation) */
         [data-testid="stMetricValue"] { 
             background-color: white; 
             padding: 10px; 
@@ -51,14 +51,12 @@ def add_custom_css():
 add_custom_css()
 
 # ================================
-# ================================
 # DYNAMIC TARGET SETTINGS (SIDEBAR)
 # ================================
 st.sidebar.header("⚙️ GLOBAL SETTINGS")
 st.sidebar.markdown("**🎯 Target Hardness (HRB)**")
 c_t1, c_t2 = st.sidebar.columns(2)
 
-# 加入 unique key 避免 DuplicateElementId 錯誤 (Add unique keys to avoid duplicate ID errors)
 TARGET_MIN = c_t1.number_input("Target Min", value=85.0, step=0.5, format="%.1f", key="global_target_min")
 TARGET_MAX = c_t2.number_input("Target Max", value=90.0, step=0.5, format="%.1f", key="global_target_max")
 st.sidebar.markdown("---")
@@ -79,7 +77,7 @@ def load_main():
 
 raw = load_main()
 
-# 處理日期時間 (Date/Time Processing)
+# Date/Time Processing
 data_period_str = "N/A"
 date_col = next((c for c in raw.columns if 'DATE' in str(c).upper()), None)
 if date_col:
@@ -89,7 +87,6 @@ if date_col:
     if pd.notna(min_date) and pd.notna(max_date):
         data_period_str = f"{min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}"
 
-# 絕對安全的台灣時區設定法 (Absolutely safe Taiwan timezone setting)
 import datetime as dt
 tz_tw = dt.timezone(dt.timedelta(hours=8))
 current_time = dt.datetime.now(tz_tw).strftime("%Y-%m-%d %H:%M")
@@ -102,7 +99,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 絕對欄位標題掃描器 (Absolute Column Header Scanner)
+# Absolute Column Header Scanner
 col_mapping = {}
 for col in raw.columns:
     clean_name = re.sub(r'[\s_]+', '', str(col)).upper()
@@ -136,18 +133,11 @@ if "COIL_NO" not in df.columns: df["COIL_NO"] = df.index
 if "Material" not in df.columns: df["Material"] = "A118T"
 if "Product_Spec" not in df.columns: df["Product_Spec"] = "N/A"
 
-# 移除硬編碼限制，允許讀取 Google Sheet 中的所有鋼種與規格 
-# (Remove hardcoded limits to allow loading all materials/specs from Google Sheet)
-
 if df.empty:
     st.error("⚠️ No valid data found in the Google Sheet.")
     st.stop()
 
-if df.empty:
-    st.error("⚠️ No data found for A118T, 2657/G01T, or N SZACC.")
-    st.stop()
-
-# 數據處理與移除 0/NA 值 (Data processing & remove 0/NA)
+# Data processing & remove 0/NA
 df["Limit_Min"] = 80.0
 df["Limit_Max"] = 93.0
 
@@ -168,7 +158,6 @@ df["Lab_Min"] = df["Limit_Min"]
 df["Lab_Max"] = df["Limit_Max"]
 df["Rule_Name"] = "Direct Spec"
 
-# 將 0 替換為 NA 以移除異常值 (Replace 0 with NA to remove outliers completely)
 test_cols = ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", 
              "Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", 
              "Standard EL min", "Standard EL max"]
@@ -178,7 +167,7 @@ for c in test_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce")
         df.loc[df[c] == 0, c] = np.nan 
 
-# 強制 Gauge 顯示兩位小數 (Force 2 decimal format for Gauge)
+# Order_Gauge kept for display/filter only, NOT in grouping
 if "Order_Gauge" in df.columns:
     df["Order_Gauge"] = pd.to_numeric(df["Order_Gauge"], errors="coerce")
     df["Order_Gauge"] = df["Order_Gauge"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
@@ -186,17 +175,8 @@ if "Order_Gauge" in df.columns:
 df = df.dropna(subset=["Hardness_LINE"])
 
 # ================================
-# ================================
-# ================================
 # SIDEBAR FILTER & SETTINGS
 # ================================
-st.sidebar.header("🎛 GLOBAL SETTINGS")
-st.sidebar.markdown("**🎯 Target Hardness (HRB)**")
-c_t1, c_t2 = st.sidebar.columns(2)
-TARGET_MIN = c_t1.number_input("Target Min", value=85.0, step=0.5, format="%.1f")
-TARGET_MAX = c_t2.number_input("Target Max", value=90.0, step=0.5, format="%.1f")
-
-st.sidebar.markdown("---")
 st.sidebar.header("🔍 DATA FILTER")
 
 if st.sidebar.button("🔄 Refresh Data"):
@@ -208,6 +188,7 @@ all_rolling = sorted(df["Rolling_Type"].dropna().astype(str).unique()) if "Rolli
 all_metal = sorted(df["Metallic_Type"].dropna().astype(str).unique()) if "Metallic_Type" in df else []
 all_qgroup = sorted(df["Quality_Group"].dropna().astype(str).unique()) if "Quality_Group" in df else []
 
+# Order_Gauge still available as optional filter (display only, not grouping)
 all_gauge = []
 if "Order_Gauge" in df.columns:
     valid_gauges = pd.to_numeric(df["Order_Gauge"], errors="coerce").dropna()
@@ -218,14 +199,14 @@ specs_filter = st.sidebar.selectbox("1. Product Specs", ["All"] + list(all_specs
 rolling = st.sidebar.selectbox("2. Rolling Type", ["All"] + list(all_rolling))
 metal = st.sidebar.selectbox("3. Metallic Type", ["All"] + list(all_metal))
 
-gauge_input = st.sidebar.text_input("4. Order Gauge (ex: 1.5 or 1.5~1.8)", value="")
+gauge_input = st.sidebar.text_input("4. Order Gauge (ex: 1.5 or 1.5~1.8) [Filter only]", value="")
 if all_gauge:
     gauge_hint = ", ".join([f"{g:.2f}" for g in all_gauge[:10]]) + ("..." if len(all_gauge) > 10 else "")
     st.sidebar.caption(f"💡 **Available:** {gauge_hint}")
 
 qgroup = st.sidebar.selectbox("5. Quality Group", ["All"] + list(all_qgroup))
 
-# 應用過濾邏輯 (Apply filtering logic)
+# Apply filtering logic
 df_master_full = df.copy() 
 
 if specs_filter != "All": df = df[df["Product_Spec"].astype(str) == specs_filter]
@@ -247,9 +228,12 @@ if gauge_input.strip() != "" and "Order_Gauge" in df:
     
 if qgroup != "All": df = df[df["Quality_Group"].astype(str) == qgroup]
 
-# 重要：在導航前先定義 valid 變數 (CRITICAL: Define 'valid' variable before Navigation)
-GROUP_COLS = [c for c in ["Product_Spec", "Rolling_Type", "Metallic_Type", "Quality_Group", "Material", "Order_Gauge"] if c in df.columns]
+# ============================================================
+# GROUP_COLS: Order_Gauge REMOVED — only spec/type/material
+# ============================================================
+GROUP_COLS = [c for c in ["Product_Spec", "Rolling_Type", "Metallic_Type", "Quality_Group", "Material"] if c in df.columns]
 if not GROUP_COLS: GROUP_COLS = ["Material"]
+
 cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
 valid = cnt[cnt["N_Coils"] >= 1]
 
@@ -271,6 +255,7 @@ else:
 if valid.empty:
     st.warning("⚠️ No valid coils found for the current filter. Please adjust the sidebar.")
     st.stop()
+
 # ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
 # ==============================================================================
@@ -283,7 +268,6 @@ if view_mode == "📊 Executive KPI Dashboard":
     else:
         total_coils = len(df_kpi)
         
-        # 縮減為 1 位小數以節省空間 (Reduce to 1 decimal place to save space)
         def clean_num(val, is_pct=False):
             if pd.isna(val): return "0%" if is_pct else "0"
             v = round(float(val), 1) 
@@ -309,7 +293,6 @@ if view_mode == "📊 Executive KPI Dashboard":
         st.markdown("### 🏆 Overall Quality Metrics")
         col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
         
-        # 縮短標題名稱避免溢出 (Shorten labels to prevent overflow)
         col1.metric("📦 Total Coils", f"{total_coils:,}")
         col2.metric("✅ Mech Yield", clean_num(yield_rate, True), clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect")
         col3.metric("🎯 HRB Yield", clean_num(hrb_yield, True), clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "Control")
@@ -321,7 +304,8 @@ if view_mode == "📊 Executive KPI Dashboard":
         st.markdown("---")
 
         st.markdown("### ⚠️ High-Risk Specs Watchlist")
-        group_cols = ["Product_Spec", "Quality_Group", "Material", "Order_Gauge"]
+        # Group cols for KPI — no Order_Gauge
+        group_cols = ["Product_Spec", "Quality_Group", "Material"]
         valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
         
         risk_summary = df_kpi.groupby(valid_group_cols).agg(
@@ -342,10 +326,10 @@ if view_mode == "📊 Executive KPI Dashboard":
         risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
         
         if not risk_top.empty:
-            rename_dict = {"Product_Spec": "Specification", "Quality_Group": "Quality", "Material": "Material", "Order_Gauge": "Gauge", "Total_Coils": "Tested Coils", "Hardness_Mean": "Avg Hardness", "Hardness_Std": "Hardness Std Dev"}
+            rename_dict = {"Product_Spec": "Specification", "Quality_Group": "Quality", "Material": "Material", "Total_Coils": "Tested Coils", "Hardness_Mean": "Avg Hardness", "Hardness_Std": "Hardness Std Dev"}
             risk_top = risk_top.rename(columns=rename_dict)
             
-            cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Target Yield (%)", "Avg Hardness", "Hardness Std Dev"]
+            cols_order = ["Specification", "Quality", "Material", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Target Yield (%)", "Avg Hardness", "Hardness Std Dev"]
             risk_top_display = risk_top[[c for c in cols_order if c in risk_top.columns]].copy()
             
             for col in ['Mech Yield (%)', 'HRB Yield (%)', 'Target Yield (%)']:
@@ -367,21 +351,20 @@ if view_mode == "📊 Executive KPI Dashboard":
             
             st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             
-            # 包含所有機械性能規格的直方圖矩陣 (Histogram matrix including all mech specs)
             st.markdown("#### 🔔 Visual Deep Dive: Top 10 Risk Distributions (Hardness & Mechanical)")
             top_10_risks = risk_top.head(10).to_dict('records')
             
             if len(top_10_risks) > 0:
-                chart_cols = st.columns(2) # 每行 2 個以提供更多空間 (2 per row for more space)
+                chart_cols = st.columns(2)
                 for idx, item in enumerate(top_10_risks):
-                    spec, mat, gauge_val = item.get("Specification", "N/A"), item.get("Material", "N/A"), item.get("Gauge", "N/A")
-                    tdf = df_kpi[(df_kpi.get("Product_Spec", "") == spec) & (df_kpi.get("Material", "") == mat) & (df_kpi.get("Order_Gauge", "") == gauge_val)]
+                    spec = item.get("Specification", "N/A")
+                    mat = item.get("Material", "N/A")
+                    tdf = df_kpi[(df_kpi.get("Product_Spec", pd.Series(dtype=str)) == spec) & (df_kpi.get("Material", pd.Series(dtype=str)) == mat)]
                     
                     if not tdf.empty:
                         fig, axes = plt.subplots(2, 2, figsize=(10, 7))
-                        fig.suptitle(f"TOP {idx+1}: {spec} | Mat: {mat} | Gauge: {gauge_val}", fontsize=12, fontweight="bold")
+                        fig.suptitle(f"TOP {idx+1}: {spec} | Mat: {mat}", fontsize=12, fontweight="bold")
                         
-                        # 準備 4 個圖表的設定 (Prepare configurations for 4 charts)
                         metrics = [
                             {"col": "Hardness_LINE", "name": "Hardness (HRB)", "min": tdf["Limit_Min"].iloc[0] if "Limit_Min" in tdf.columns else 0, "max": tdf["Limit_Max"].iloc[0] if "Limit_Max" in tdf.columns else 0, "ax": axes[0, 0], "color": "#1f77b4"},
                             {"col": "TS", "name": "Tensile Strength (TS)", "min": tdf["Standard TS min"].max() if "Standard TS min" in tdf.columns else 0, "max": tdf["Standard TS max"].min() if "Standard TS max" in tdf.columns else 0, "ax": axes[0, 1], "color": "#2ca02c"},
@@ -399,13 +382,11 @@ if view_mode == "📊 Executive KPI Dashboard":
                                     x_ax = np.linspace(d.min() - 2*s_val, d.max() + 2*s_val, 100)
                                     ax.plot(x_ax, (1/(s_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_ax - m_val) / s_val)**2), color="#cc0000", lw=2)
                                 
-                                # 繪製規格界限 (Plot specification limits)
                                 if pd.notna(m["min"]) and m["min"] > 0:
                                     ax.axvline(m["min"], color="black", linestyle="--", lw=1.5, label=f"LSL ({m['min']:.0f})")
                                 if pd.notna(m["max"]) and 0 < m["max"] < 9000:
                                     ax.axvline(m["max"], color="black", linestyle="--", lw=1.5, label=f"USL ({m['max']:.0f})")
                                 
-                                # 為硬度圖表添加目標區域 (Add target zone for Hardness chart)
                                 if m["col"] == "Hardness_LINE":
                                     ax.axvline(TARGET_MIN, color="green", linestyle=":", lw=2, label="Target")
                                     ax.axvline(TARGET_MAX, color="green", linestyle=":", lw=2)
@@ -493,7 +474,6 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             X = sub_grp[["Hardness_LINE"]].values
             
-            # 預測並掃描雙向界限 (Predict and scan dual limits)
             def eval_risk(col, sp_min, sp_max, is_el=False):
                 m = LinearRegression().fit(X, sub_grp[col].values)
                 pred = m.predict([[user_hrb]])[0]
@@ -504,12 +484,10 @@ if view_mode == "🚀 Global Summary Dashboard":
                 sp_min = sp_min if pd.notna(sp_min) else 0
                 sp_max = sp_max if pd.notna(sp_max) else 0
                 
-                # 掃描風險警告 (Scan for risk warnings)
                 status = "🟢 Safe"
                 if sp_min > 0 and worst < sp_min: status = "🔴 Risk (Low)"
                 if not is_el and 0 < sp_max < 9000 and best > sp_max: status = "🔴 Risk (High)"
                 
-                # 顯示機械性能規格字串 (Display Mech Spec string)
                 if is_el:
                     lim_str = f"≥ {sp_min:.1f}" if sp_min > 0 else "-"
                 else:
@@ -521,20 +499,18 @@ if view_mode == "🚀 Global Summary Dashboard":
                 return pred, worst, best, lim_str, status
 
             try:
-                # 隱藏不必要的欄位，新增 HRB Spec (Hide unnecessary columns, add HRB Spec)
                 b_dict = {}
                 for col in GROUP_COLS:
                     if col not in ["Rolling_Type", "Metallic_Type", "Material", "Quality_Group"]:
                         b_dict[col] = g[col]
                 b_dict["HRB Spec"] = hrb_spec_str
                 
-                # 計算 TS (Calculate TS)
                 ts_m_min = sub_grp["Standard TS min"].max() if "Standard TS min" in sub_grp else 0
                 ts_m_max = sub_grp["Standard TS max"].min() if "Standard TS max" in sub_grp else 0
                 p_ts, w_ts, b_ts, l_ts, st_ts = eval_risk("TS", ts_m_min, ts_m_max)
-                dt = b_dict.copy()
-                dt.update({"Pred TS": f"{p_ts:.0f}", "Est. Range": f"{w_ts:.0f}~{b_ts:.0f}", "Mech Spec": l_ts, "Status": st_ts})
-                rows_ts.append(dt)
+                dt_row = b_dict.copy()
+                dt_row.update({"Pred TS": f"{p_ts:.0f}", "Est. Range": f"{w_ts:.0f}~{b_ts:.0f}", "Mech Spec": l_ts, "Status": st_ts})
+                rows_ts.append(dt_row)
                 
                 ys_m_min = sub_grp["Standard YS min"].max() if "Standard YS min" in sub_grp else 0
                 ys_m_max = sub_grp["Standard YS max"].min() if "Standard YS max" in sub_grp else 0
@@ -572,9 +548,7 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
 
 # ==============================================================================
-# ==============================================================================
-# ==============================================================================
-# 👑 MASTER DICTIONARY EXPORT (VIEW ON SCREEN & DOWNLOAD)
+# 👑 MASTER DICTIONARY EXPORT
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     st.markdown("---")
@@ -585,31 +559,25 @@ if view_mode == "👑 Master Dictionary Export":
         master_data = []
         clean_master_df = df_master_full.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
         
-        # 運算基準 (Calculation Baselines)
-        sigma_n = 2.0  # Control Limit (Siết chặt xuống 2 Sigma theo yêu cầu)
-        target_k = 1.0 # Target Zone
+        sigma_n = 2.0
+        target_k = 1.0
 
         for keys, group in clean_master_df.groupby(GROUP_COLS):
             if len(group) < 3: continue 
             
-            # --- 核心運算 (Core Calculations) ---
             data = group["Hardness_LINE"]
             mu = data.mean()
             mrs = np.abs(np.diff(data.values))
             sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else data.std()
             
-            # 1. 建議控制界限 (M4: I-MR 2σ)
             c_min, c_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
-            # 2. 建議目標界限 (Target 1σ)
             t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
             
-            # AI 模型用於預測機械性能範圍 (AI Models for predicting Mech Ranges)
             X_train = group[["Hardness_LINE"]].values
             m_ts = LinearRegression().fit(X_train, group["TS"].values)
             m_ys = LinearRegression().fit(X_train, group["YS"].values)
             m_el = LinearRegression().fit(X_train, group["EL"].values)
             
-            # 取得原始機械性能規格 (Original Mechanical Specs)
             s_ts_min = group["Standard TS min"].max()
             s_ts_max = group["Standard TS max"].min()
             s_ys_min = group["Standard YS min"].max()
@@ -624,20 +592,16 @@ if view_mode == "👑 Master Dictionary Export":
                 elif 0 < ma < 9000: return f"≤ {ma:.0f}"
                 return "-"
 
-            # 建立完整數據行 (Create full data row)
             master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(GROUP_COLS)}
             master_dict.update({
                 "N Coils": len(group),
                 "Current Hardness Spec": f"{group['Limit_Min'].max():.1f}~{group['Limit_Max'].min():.1f}",
                 "Proposed Control Limit (2σ)": f"{c_min:.1f} ~ {c_max:.1f}",
                 "🎯 Proposed Target Zone (1σ)": f"{t_min:.1f} ~ {t_max:.1f}",
-                
                 "Spec: TS": fmt_s(s_ts_min, s_ts_max),
                 "Exp. TS (at Target)": f"{int(m_ts.predict([[t_min]])[0])}~{int(m_ts.predict([[t_max]])[0])}",
-                
                 "Spec: YS": fmt_s(s_ys_min, s_ys_max),
                 "Exp. YS (at Target)": f"{int(m_ys.predict([[t_min]])[0])}~{int(m_ys.predict([[t_max]])[0])}",
-                
                 "Spec: EL": f"≥ {s_el_min:.1f}%" if s_el_min > 0 else "-",
                 "Exp. EL (at Target)": f"{min(m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]):.1f}% ~ {max(m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]):.1f}%"
             })
@@ -646,7 +610,6 @@ if view_mode == "👑 Master Dictionary Export":
         if master_data:
             df_out = pd.DataFrame(master_data)
             
-            # 強制指定欄位排序 (Force column ordering for logical flow)
             ordered_cols = GROUP_COLS + [
                 "N Coils", 
                 "Current Hardness Spec", "Proposed Control Limit (2σ)", "🎯 Proposed Target Zone (1σ)",
@@ -657,17 +620,14 @@ if view_mode == "👑 Master Dictionary Export":
             final_cols = [c for c in ordered_cols if c in df_out.columns]
             df_out = df_out[final_cols]
             
-            # --- 1. 在畫面上直接顯示美化後的預覽表格 (Show styled dataframe on screen) ---
             st.markdown("### 👁️ Preview Master Dictionary")
             
-            # 套用與 Excel 相同的顏色邏輯 (Apply the same color logic as Excel to the Streamlit dataframe)
             styled_df = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in final_cols if "Spec:" in c or "Current Hardness Spec" in c]) \
                                     .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in final_cols if "Target" in c or "Exp." in c]) \
                                     .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=["Proposed Control Limit (2σ)"])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            # --- 2. 準備 Excel 匯出檔案 (Prepare Excel Export file) ---
             import datetime as dt
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -675,7 +635,6 @@ if view_mode == "👑 Master Dictionary Export":
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Specs']
                 
-                # Excel 美化格式設定 (Excel beautification settings)
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
                 target_fmt = workbook.add_format({'bg_color': '#D9EAD3', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
                 spec_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'italic': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
@@ -714,15 +673,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
     st.markdown(f"**Coils:** {sub['COIL_NO'].nunique()} | **Std Limit:** {lo:.1f} ~ {hi:.1f}")
         
     if view_mode == "📋 Data Inspection":
-        # 移除 Rolling_Type 欄位 (Remove Rolling_Type column for cleaner view)
         display_df = sub.drop(columns=["Rolling_Type"]) if "Rolling_Type" in sub.columns else sub.copy()
         
-        # 找出所有日期欄位並格式化，去除後方的 00:00:00 (Format datetime to remove 00:00:00)
         date_cols = display_df.select_dtypes(include=['datetime', 'datetimetz']).columns.tolist()
         for d_col in date_cols:
             display_df[d_col] = display_df[d_col].dt.strftime('%Y-%m-%d')
             
-        # 備用方案：如果欄位名稱包含 DATE 但被識別為字串，則強制轉換 (Fallback: force format string columns containing 'DATE')
         for col in display_df.columns:
             if 'DATE' in str(col).upper() and col not in date_cols:
                 try:
@@ -730,14 +686,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 except:
                     pass
         
-        # 根據 NG 標籤標記異常行 (Highlight NG rows in red)
         def highlight_ng_rows(row): 
             return ['background-color: #ffe6e6'] * len(row) if row.get('NG', False) else [''] * len(row)
         
         num_cols = display_df.select_dtypes(include=[np.number]).columns.tolist()
         
-        # 設定數值格式：硬度保留 1 位小數，其他數值（包含 Limit_Min/Max 等）皆去除小數點 
-        # (Format numeric columns: Hardness keeps 1 decimal, Limit_Min/Max and others keep 0 decimals)
         fmt = {}
         for c in num_cols:
             if c in ["Hardness_LINE", "Hardness_LAB"]:
@@ -834,35 +787,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if not summary.empty:
             x = np.arange(len(summary))
             fig, ax = plt.subplots(figsize=(15,6))
-            
-            # --- 升級：建立副 Y 軸來獨立顯示 EL，避免擠在圖表底部 (Upgrade: Create secondary Y-axis for EL) ---
             ax2 = ax.twinx()
             
             def p_prop(ax_obj, x, y, ymin, ymax, c, lbl, m):
                 ax_obj.plot(x, y, marker=m, color=c, label=lbl, lw=2)
                 ax_obj.fill_between(x, ymin, ymax, color=c, alpha=0.1)
             
-            # 繪製 TS 和 YS 在主軸 (Plot TS and YS on primary axis)
             p_prop(ax, x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS Actual", "o")
             p_prop(ax, x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS Actual", "s")
-            
-            # 繪製 EL 在副軸 (Plot EL on secondary axis)
             p_prop(ax2, x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL Actual", "^")
 
-            # --- 獲取規格界限 (Get Spec Limits) ---
             g_ts_min = summary["Std_TS_min"].max()
             g_ts_max = summary["Std_TS_max"].min()
             g_ys_min = summary["Std_YS_min"].max()
             g_ys_max = summary["Std_YS_max"].min()
             g_el_min = summary["Std_EL_min"].max()
 
-            # --- 繪製規格界限線 (Draw Spec Limit Lines) ---
             if pd.notna(g_ts_min) and g_ts_min > 0: ax.axhline(g_ts_min, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS LSL ({g_ts_min:.0f})")
             if pd.notna(g_ts_max) and 0 < g_ts_max < 9000: ax.axhline(g_ts_max, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS USL ({g_ts_max:.0f})")
-            
             if pd.notna(g_ys_min) and g_ys_min > 0: ax.axhline(g_ys_min, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS LSL ({g_ys_min:.0f})")
             if pd.notna(g_ys_max) and 0 < g_ys_max < 9000: ax.axhline(g_ys_max, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS USL ({g_ys_max:.0f})")
-            
             if pd.notna(g_el_min) and g_el_min > 0: ax2.axhline(g_el_min, color="#ff7f0e", linestyle=":", lw=2, alpha=0.6, label=f"EL LSL ({g_el_min:.0f})")
 
             for j, row in enumerate(summary.itertuples()):
@@ -883,18 +827,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax2.set_ylabel("Elongation (%)", fontweight="bold", color="#ff7f0e")
             ax.set_title("Hardness vs Mechanical Properties with Spec Limits", fontweight="bold")
             
-            # 合併圖例 (Combine legends to the right side)
             lines_1, labels_1 = ax.get_legend_handles_labels()
             lines_2, labels_2 = ax2.get_legend_handles_labels()
             ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc="center left", bbox_to_anchor=(1.08, 0.5))
             
             ax.grid(True, ls="--", alpha=0.5)
-            fig.tight_layout() # 防止圖例被裁切 (Prevent legend from being cut off)
+            fig.tight_layout()
             st.pyplot(fig)
 
             specs_str = f"Specs: {', '.join(str(x) for x in sub['Product_Spec'].dropna().unique())}" if 'Product_Spec' in sub.columns else "Specs: N/A"
 
-            # 於總結表中直接進行評估演算法 (Evaluation algorithm within summary table)
             def check_limit(act_min, act_max, sp_min, sp_max, is_el=False):
                 fail = False
                 if pd.notna(sp_min) and sp_min > 0 and act_min < sp_min: fail = True
@@ -914,7 +856,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 el_std = bin_data['EL'].std()
 
                 corr_bin_summary.append({
-                    "Specification List": specs_str, "Material": g.get("Material", "N/A"), "Gauge": g.get("Order_Gauge", "N/A"),
+                    "Specification List": specs_str, "Material": g.get("Material", "N/A"),
                     "Hardness Bin": row.HRB_bin, "N": row.N_coils,
                     "TS Spec": f"{row.Std_TS_min:.0f}~{row.Std_TS_max:.0f}" if pd.notna(row.Std_TS_max) and row.Std_TS_max < 9000 else (f"≥{row.Std_TS_min:.0f}" if pd.notna(row.Std_TS_min) else "-"),
                     "TS Actual": ts_act_str, "TS Mean": f"{row.TS_mean:.1f}", "TS Std": f"{ts_std:.1f}" if pd.notna(ts_std) else "-",
@@ -931,9 +873,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             def d_bin(title, cols, c_code):
                 st.markdown(f"#### {title}")
-                target_df = df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N"] + cols]
+                target_df = df_full[["Specification List", "Material", "Hardness Bin", "N"] + cols]
                 
-                # 根據圖示為儲存格填色 (Color cells based on icons)
                 def hl_status(val):
                     if isinstance(val, str):
                         if '❌' in val: return 'color: #721c24; font-weight: bold; background-color: #f8d7da'
@@ -955,13 +896,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_full.to_excel(writer, sheet_name='All_Data', index=False)
-                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "TS Spec", "TS Actual", "TS Mean", "TS Std"]].to_excel(writer, sheet_name='TS_Only', index=False)
-                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "YS Spec", "YS Actual", "YS Mean", "YS Std"]].to_excel(writer, sheet_name='YS_Only', index=False)
-                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "EL Spec", "EL Actual", "EL Mean", "EL Std"]].to_excel(writer, sheet_name='EL_Only', index=False)
+                df_full[["Specification List", "Material", "Hardness Bin", "N", "TS Spec", "TS Actual", "TS Mean", "TS Std"]].to_excel(writer, sheet_name='TS_Only', index=False)
+                df_full[["Specification List", "Material", "Hardness Bin", "N", "YS Spec", "YS Actual", "YS Mean", "YS Std"]].to_excel(writer, sheet_name='YS_Only', index=False)
+                df_full[["Specification List", "Material", "Hardness Bin", "N", "EL Spec", "EL Actual", "EL Mean", "EL Std"]].to_excel(writer, sheet_name='EL_Only', index=False)
                 for s in writer.sheets:
                     writer.sheets[s].set_column('A:A', 25); writer.sheets[s].set_column('B:C', 15); writer.sheets[s].set_column('D:Z', 12) 
             
             st.download_button("📥 Export Binning Report (Excel)", data=output.getvalue(), file_name=f"Hardness_Bin_Report_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
     elif view_mode == "⚙️ Mech Props Analysis":
         if i == 0: ts_summary, ys_summary, el_summary = [], [], []
 
@@ -1078,7 +1020,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else: st.error("No coils found.")
 
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
-        # 獲取當前組別的機械性能標準規範 (Get current mechanical standard specs for the group)
         spec_ts_min = sub["Standard TS min"].max() if "Standard TS min" in sub.columns else 0
         spec_ts_max = sub["Standard TS max"].min() if "Standard TS max" in sub.columns else 0
         spec_ys_min = sub["Standard YS min"].max() if "Standard YS min" in sub.columns else 0
@@ -1097,11 +1038,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
         ys_spec_str = fmt_spec(spec_ys_min, spec_ys_max)
         el_spec_str = fmt_spec(spec_el_min, 0)
         
-        # 顯示當前規格基準供主管對照 (Display current spec baseline for manager's reference)
         st.info(f"📋 **Current Standard Specs:** &nbsp;&nbsp;&nbsp; TS: **{ts_spec_str}** &nbsp;&nbsp;|&nbsp;&nbsp; YS: **{ys_spec_str}** &nbsp;&nbsp;|&nbsp;&nbsp; EL: **{el_spec_str}**")
         
         c1, c2, c3 = st.columns(3)
-        # 設定輸入框，預設值帶入實際數據的極值 (Set input boxes, default to actual data extremes)
         r_ts_min = c1.number_input("Min TS", value=float(sub['TS'].min()) if not sub['TS'].isna().all() else 0.0, step=5.0, key=f"tmin_{i}")
         r_ts_max = c1.number_input("Max TS", value=float(sub['TS'].max()) if not sub['TS'].isna().all() else 1000.0, step=5.0, key=f"tmax_{i}")
         
@@ -1188,7 +1127,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             st.plotly_chart(fig, use_container_width=True)
             
-            # 整合規格檢查掃描 (Integrate Spec check scan)
             st.markdown("##### 🏁 Forecast Summary & Spec Evaluation")
             c1, c2, c3 = st.columns(3)
             def get_delta(p, l): return round(p - l, 1)
@@ -1225,7 +1163,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
-        # --- 1. 在視圖頂部顯示一次說明 (Display explanation once at the top) ---
         if i == 0:
             all_groups_summary = []
             st.markdown("### 📘 Control Limit Calculation Methods")
@@ -1258,10 +1195,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mu = data.mean()
             std_dev = data.std()
             
-            # 算法 M1 (Algorithm M1)
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             
-            # 算法 M2 (Algorithm M2)
             Q1 = data.quantile(0.25)
             Q3 = data.quantile(0.75)
             IQR = Q3 - Q1
@@ -1271,18 +1206,15 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if pd.isna(sigma_clean) or sigma_clean == 0: sigma_clean = std_dev
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
             
-            # 算法 M3 (Algorithm M3)
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
             
-            # 算法 M4 (Algorithm M4)
             mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # --- 計算目標界限 (Calculate Target Limits) ---
             target_k = 1.0 
             new_target_min = mu - target_k * sigma_imr
             new_target_max = mu + target_k * sigma_imr
@@ -1301,17 +1233,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
             
-            # ==================================================================
-            # 綜合界限圖表與常態分佈曲線 (Combined Limits Chart with Normal Curve)
-            # ==================================================================
             from scipy.stats import norm
             fig, ax = plt.subplots(figsize=(12, 5))
             
-            # 繪製實際資料分佈直方圖 (Plot actual data histograms)
             ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
             if not data_lab.empty: ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
             
-            # 加入常態分佈曲線 (Add normal curve)
             min_cands = [m1_min, m4_min, spec_min, data.min()]
             max_cands = [m1_max, m4_max, display_max, data.max()]
             if not data_lab.empty:
@@ -1324,7 +1251,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             ax.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="#333333", lw=2, alpha=0.8, label=f"Normal Curve (σ={std_dev:.2f})")
             
-            # 繪製各方法控制界限 (Plot control limits for each method)
             ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
             ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
             ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
@@ -1340,13 +1266,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.legend(loc="upper right", fontsize="small")
             st.pyplot(fig)
 
-            # ==================================================================
-            # 預估機械性能表與匯出 (Mechanical Estimation Table & Export)
-            # ==================================================================
             st.write("---") 
             st.markdown(f"#### 📌 Limit Summary & Mechanical Estimation")
             
-            # 從數據中獲取機械性能規格界限 (Get Mech Spec limits from data)
             spec_ts_min = sub["Standard TS min"].max() if "Standard TS min" in sub.columns else 0
             spec_ts_max = sub["Standard TS max"].min() if "Standard TS max" in sub.columns else 0
             spec_ys_min = sub["Standard YS min"].max() if "Standard YS min" in sub.columns else 0
@@ -1361,10 +1283,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 elif 0 < s_max < 9000: return f"≤ {s_max:.0f}"
                 return "-"
 
-            # 顯示規格基準 (Display Spec baseline)
             st.info(f"**Mechanical Specs Target:** TS: **{fmt_spec(spec_ts_min, spec_ts_max)}** | YS: **{fmt_spec(spec_ys_min, spec_ys_max)}** | EL: **{fmt_spec(spec_el_min, 0)}**")
 
-            # 使用實際數據訓練線性迴歸模型進行預測 (Train Linear Regression model from actual data for prediction)
             df_train = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
             has_model = False
             if len(df_train) >= 3:
@@ -1383,12 +1303,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 
             def eval_spec(v_min, v_max, s_min, s_max, is_el=False):
                 if v_min == 0 and v_max == 0: return "N/A"
-                # EL 只有下限 (min)。v_min 是對應最高硬度的最低 EL 點 (EL only has a lower bound)
                 if is_el: 
                     if pd.notna(s_min) and s_min > 0 and v_min < s_min: return "❌ Fail"
                     return "✅ Pass"
-                
-                # TS 與 YS (TS and YS)
                 if pd.notna(s_min) and s_min > 0 and v_min < s_min: return "❌ Fail"
                 if pd.notna(s_max) and 0 < s_max < 9000 and v_max > s_max: return "❌ Fail"
                 return "✅ Pass"
@@ -1470,20 +1387,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 key=f"dl_sum_{i}"
             )
             
-        # --- 顯示所有分組的整體總結表 (Display overall summary table for all groups) ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown("## 📊 Summary of Control Limits")
             df_total = pd.DataFrame(all_groups_summary)
             
-            # 設定樣式：凸顯 M4 和 New Target (Style: Highlight M4 and New Target)
             styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
                                       .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)']) \
                                       .set_properties(**{'background-color': '#e2efda', 'color': '#155724', 'font-weight': 'bold'}, subset=['New Core Target (±1.0σ)'])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            # 轉換為 Excel 檔案並自動調整欄寬 (Convert to Excel file and auto-adjust column width)
             import io
             buffer_spc = io.BytesIO()
             with pd.ExcelWriter(buffer_spc, engine='xlsxwriter') as writer:

@@ -346,8 +346,7 @@ if view_mode == "📊 Executive KPI Dashboard":
                 return ''
 
             styled_risk = risk_top_display.style
-            if hasattr(styled_risk, "map"): styled_risk = styled_risk.map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
-            else: styled_risk = styled_risk.applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
+            styled_risk = styled_risk.map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
             
             st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             
@@ -453,7 +452,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
         if stats_rows:
             def c_pass(val): return f"background-color: {'#d4edda' if val >= 98 else ('#fff3cd' if val >= 90 else '#f8d7da')}; color: {'#155724' if val >= 98 else ('#856404' if val >= 90 else '#721c24')}; font-weight: bold"
-            st.dataframe(pd.DataFrame(stats_rows).style.format("{:.1f}", subset=[c for c in pd.DataFrame(stats_rows).columns if "(Avg)" in c or "Pass" in c]).applymap(c_pass, subset=["Pass Rate"]).background_gradient(subset=["HRB (Avg)"], cmap="Blues"), use_container_width=True)
+            st.dataframe(pd.DataFrame(stats_rows).style.format("{:.1f}", subset=[c for c in pd.DataFrame(stats_rows).columns if "(Avg)" in c or "Pass" in c]).map(c_pass, subset=["Pass Rate"]).background_gradient(subset=["HRB (Avg)"], cmap="Blues"), use_container_width=True)
         else: st.warning("⚠️ Insufficient data.")
 
     with tab2:
@@ -538,13 +537,13 @@ if view_mode == "🚀 Global Summary Dashboard":
             c_top1, c_top2 = st.columns(2)
             with c_top1: 
                 st.markdown("##### 🔹 Tensile Strength (TS)")
-                st.dataframe(pd.DataFrame(rows_ts).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows_ts).style.map(sr, subset=["Status"]), use_container_width=True, hide_index=True)
             with c_top2: 
                 st.markdown("##### 🔸 Yield Strength (YS)")
-                st.dataframe(pd.DataFrame(rows_ys).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(rows_ys).style.map(sr, subset=["Status"]), use_container_width=True, hide_index=True)
             
             st.markdown("##### 🔻 Elongation (EL)")
-            st.dataframe(pd.DataFrame(rows_el).style.applymap(sr, subset=["Status"]), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows_el).style.map(sr, subset=["Status"]), use_container_width=True, hide_index=True)
     st.stop()
 
 # ==============================================================================
@@ -763,7 +762,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
                     color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
                     df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
-                    st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
+                    st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).map(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
 
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
         if i == 0: corr_bin_summary = []
@@ -882,10 +881,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     return ''
                 
                 styled = target_df.style.set_properties(**{'background-color': c_code, 'font-weight': 'bold'}, subset=[c for c in cols if "Std" in c])
-                if hasattr(styled, "map"):
-                    styled = styled.map(hl_status, subset=[c for c in cols if "Actual" in c])
-                else:
-                    styled = styled.applymap(hl_status, subset=[c for c in cols if "Actual" in c])
+                styled = styled.map(hl_status, subset=[c for c in cols if "Actual" in c])
                     
                 st.dataframe(styled, use_container_width=True, hide_index=True)
 
@@ -992,7 +988,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     styled_df = pd.DataFrame(data_list).style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
                                         .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Hardness Range (HRB)']) \
                                         .set_properties(**{'background-color': c_code, 'color': '#004085'}, subset=['LCL (-3σ)', 'UCL (+3σ)']) \
-                                        .applymap(cpk_color, subset=['Cpk'])
+                                        .map(cpk_color, subset=['Cpk'])
                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
             d_sum("1️⃣ Tensile Strength (TS)", ts_summary, "#e6f2ff") 
@@ -1362,7 +1358,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 return [''] * len(s)
 
             styled_df = df_summary.style.apply(highlight_new_target, axis=1) \
-                                        .applymap(highlight_status, subset=['TS Eval', 'YS Eval', 'EL Eval', 'Overall Proposal'])
+                                        .map(highlight_status, subset=['TS Eval', 'YS Eval', 'EL Eval', 'Overall Proposal'])
 
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
@@ -1392,7 +1388,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.markdown("## 📊 Summary of Control Limits")
             df_total = pd.DataFrame(all_groups_summary)
             
-            styled_df = df_total.style.applymap(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
+            styled_df = df_total.style.map(lambda v: 'color: red; font-weight: bold' if 'Narrow' in v else 'color: green; font-weight: bold', subset=['Status']) \
                                       .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold'}, subset=['M4: I-MR (Optimal)']) \
                                       .set_properties(**{'background-color': '#e2efda', 'color': '#155724', 'font-weight': 'bold'}, subset=['New Core Target (±1.0σ)'])
             
